@@ -31,7 +31,7 @@ interface BufferedSnapshot {
 
 const networkMotionConfig: MotionConfig = {
   acceleration: 30,
-  floorHeight: 1,
+  floorHeight: Number.NEGATIVE_INFINITY,
   gravity: -9.81,
   jumpSpeed: 7,
   maxDelta: 1 / 60,

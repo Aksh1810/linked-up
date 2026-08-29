@@ -151,6 +151,22 @@ test("local prediction applies jump immediately", () => {
   assert(predictor.renderState()!.velocity.y > 0);
 });
 
+test("local prediction does not invent a floor while the server says the player is falling", () => {
+  const predictor = new PredictionReconciler("blue", 60);
+  const falling = localSnapshot(100);
+  falling.players[0] = {
+    ...falling.players[0],
+    position: { x: 0, y: 0.5, z: 0 },
+    velocity: { x: 0, y: -2, z: 0 },
+    grounded: false,
+  };
+  predictor.reconcile(falling);
+  predictor.record({ sequence: 1, clientTick: 1, moveX: 0, moveZ: 0, jump: false });
+
+  assert(predictor.renderState()!.position.y < falling.players[0].position.y);
+  assert.equal(predictor.renderState()!.grounded, false);
+});
+
 test("small reconciliation preserves display then halves its correction after 80 ms", () => {
   const predictor = new PredictionReconciler("blue", 60);
   predictor.reconcile(localSnapshot(100));
