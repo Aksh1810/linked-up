@@ -1,0 +1,494 @@
+:root {
+  color: #10243a;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: #8fd9ff;
+}
+
+button,
+canvas {
+  -webkit-tap-highlight-color: transparent;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+#game-canvas:focus-visible {
+  outline: 3px solid #ff914d;
+  outline-offset: -5px;
+}
+
+.title-plate,
+.controls,
+.route,
+.telemetry,
+.slot-picker {
+  position: fixed;
+  z-index: 2;
+  color: #f4fbff;
+  background: rgb(16 36 58 / 90%);
+  box-shadow: 0 12px 28px rgb(18 48 68 / 20%);
+  backdrop-filter: blur(10px);
+}
+
+.slot-picker {
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(560px, calc(100% - 32px));
+  padding: 28px 30px 32px;
+  transform: translate(-50%, -50%);
+  clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
+}
+
+.slot-picker h2 {
+  margin: 6px 0 24px;
+  font-family: "Arial Rounded MT Bold", "Avenir Next Rounded", ui-rounded, sans-serif;
+  font-size: clamp(1.6rem, 5vw, 2.8rem);
+  letter-spacing: -0.05em;
+}
+
+.slot-picker > div {
+  display: grid;
+  grid-template-columns: 1fr 38px 1fr;
+  align-items: center;
+}
+
+.slot-picker > div > span {
+  height: 3px;
+  background: #ff914d;
+  box-shadow: 0 0 12px #ff914d;
+}
+
+.slot-picker a,
+#return-link {
+  padding: 13px 16px;
+  border: 2px solid currentColor;
+  color: #f4fbff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.slot-picker .blue-slot {
+  color: #8fd9ff;
+}
+
+.slot-picker .orange-slot {
+  color: #ffb15c;
+}
+
+.slot-picker a:hover,
+.slot-picker a:focus-visible,
+#return-link:hover,
+#return-link:focus-visible {
+  color: #10243a;
+  background: #f4fbff;
+  outline: 3px solid #f4fbff;
+  outline-offset: 3px;
+}
+
+.slot-selection .controls,
+.slot-selection .route,
+.slot-selection .telemetry {
+  display: none;
+}
+
+.title-plate {
+  top: 24px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 264px;
+  padding: 14px 22px 15px 16px;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+}
+
+.title-plate p,
+.title-plate h1,
+.eyebrow,
+.loading p {
+  margin: 0;
+}
+
+.title-plate p,
+.eyebrow {
+  color: #8fd9ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.title-plate h1 {
+  margin-top: 2px;
+  font-family: "Arial Rounded MT Bold", "Avenir Next Rounded", ui-rounded, sans-serif;
+  font-size: clamp(1.35rem, 2.3vw, 2rem);
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.title-mark {
+  display: flex;
+  align-items: center;
+}
+
+.title-mark i {
+  width: 12px;
+  height: 12px;
+  border: 3px solid #f4fbff;
+  border-radius: 50%;
+}
+
+.title-mark b {
+  width: 26px;
+  height: 3px;
+  background: #ff914d;
+  box-shadow: 0 0 10px #ff914d;
+}
+
+.controls {
+  bottom: 24px;
+  left: 24px;
+  display: grid;
+  gap: 9px;
+  min-width: 210px;
+  padding: 16px 20px 18px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  align-items: center;
+  gap: 11px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 23px;
+  height: 23px;
+  border: 1px solid rgb(244 251 255 / 48%);
+  border-bottom-width: 3px;
+  border-radius: 5px;
+  color: #f4fbff;
+  background: rgb(244 251 255 / 9%);
+  font: 700 0.64rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.key-cluster {
+  display: flex;
+  gap: 3px;
+}
+
+.space-key {
+  width: 92px;
+}
+
+.mouse-icon {
+  width: 19px;
+  height: 27px;
+  margin-left: 36px;
+  border: 2px solid #f4fbff;
+  border-radius: 11px;
+}
+
+.mouse-icon::before {
+  display: block;
+  width: 2px;
+  height: 6px;
+  margin: 4px auto;
+  border-radius: 2px;
+  background: #ff914d;
+  content: "";
+}
+
+.route {
+  top: 50%;
+  right: 24px;
+  width: 150px;
+  padding: 16px 17px 18px;
+  transform: translateY(-50%);
+  clip-path: polygon(12px 0, 100% 0, 100% 100%, 0 100%, 0 12px);
+}
+
+.route ol {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 17px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route ol::before {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: 2px;
+  background: rgb(244 251 255 / 22%);
+  content: "";
+}
+
+.route li {
+  position: relative;
+  padding-left: 20px;
+  color: rgb(244 251 255 / 48%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.route li::before {
+  position: absolute;
+  top: 2px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #61788c;
+  border-radius: 50%;
+  background: #10243a;
+  content: "";
+}
+
+.route li.active {
+  color: #f4fbff;
+}
+
+.route li.active::before {
+  border-color: #f4fbff;
+  background: #ff914d;
+  box-shadow: 0 0 10px #ff914d;
+}
+
+.telemetry {
+  top: 25px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.65rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff914d;
+}
+
+.ready .status-dot {
+  background: #65c66a;
+  box-shadow: 0 0 8px #65c66a;
+}
+
+#speed-label {
+  min-width: 56px;
+  margin-left: 5px;
+  color: #8fd9ff;
+  text-align: right;
+}
+
+#player-label,
+#tick-label {
+  padding-left: 9px;
+  border-left: 1px solid rgb(244 251 255 / 28%);
+  color: #f4fbff;
+}
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: #10243a;
+  background: #8fd9ff;
+  transition: opacity 260ms ease, visibility 260ms ease;
+}
+
+.loading[aria-hidden="true"] {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.loading span {
+  width: 42px;
+  height: 42px;
+  border: 5px solid rgb(16 36 58 / 18%);
+  border-top-color: #10243a;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading p {
+  font-family: "Arial Rounded MT Bold", "Avenir Next Rounded", ui-rounded, sans-serif;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.loading.error span {
+  display: none;
+}
+
+.loading.error p {
+  max-width: min(420px, calc(100vw - 40px));
+  text-align: center;
+}
+
+#server-command {
+  padding: 8px 11px;
+  color: #f4fbff;
+  background: #10243a;
+  font-size: 0.72rem;
+}
+
+#return-link {
+  color: #10243a;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (max-width: 700px) {
+  .title-plate {
+    top: 12px;
+    left: 12px;
+    min-width: 220px;
+  }
+
+  .controls {
+    bottom: 12px;
+    left: 12px;
+  }
+
+  .route {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    width: 47px;
+    padding: 13px;
+    transform: none;
+  }
+
+  .route .eyebrow,
+  .route li span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .route ol {
+    align-items: center;
+    margin: 0;
+  }
+
+  .route li {
+    width: 12px;
+    height: 12px;
+    padding: 0;
+  }
+
+  .route li::before {
+    left: 0;
+  }
+
+  .telemetry {
+    top: 83px;
+    right: 12px;
+  }
+
+  #status-label {
+    display: none;
+  }
+
+  #speed-label {
+    display: none;
+  }
+
+  .slot-picker > div {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .slot-picker > div > span {
+    width: 3px;
+    height: 20px;
+    justify-self: center;
+  }
+}
+
+@media (max-width: 440px) {
+  .controls {
+    right: 72px;
+    min-width: 0;
+  }
+
+  .control-row {
+    grid-template-columns: 96px 1fr;
+  }
+
+  .title-mark {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading,
+  .loading span {
+    transition: none;
+    animation: none;
+  }
+}

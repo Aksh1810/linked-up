@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22><circle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%23ff914d%22/></svg>" />
+    <meta
+      name="description"
+      content="Linked-Up: a cooperative climbing game about robots connected by an energy tether."
+    />
+    <title>Linked-Up — Base Camp Prototype</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas
+        id="game-canvas"
+        tabindex="0"
+        aria-label="Linked-Up 3D base-camp prototype"
+      ></canvas>
+
+      <nav id="slot-picker" class="slot-picker" aria-label="Choose local test player" hidden>
+        <p class="eyebrow">Choose your link</p>
+        <h2>Which robot are you?</h2>
+        <div>
+          <a class="blue-slot" href="?player=blue">Play as Blue</a>
+          <span aria-hidden="true"></span>
+          <a class="orange-slot" href="?player=orange">Play as Orange</a>
+        </div>
+      </nav>
+
+      <header class="title-plate" aria-label="Linked-Up">
+        <span class="title-mark" aria-hidden="true">
+          <i></i><b></b><i></i>
+        </span>
+        <div>
+          <p>Base-camp build</p>
+          <h1>LINKED—UP</h1>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Controls">
+        <p class="eyebrow">Move together</p>
+        <div class="control-row">
+          <span class="key-cluster" aria-label="W A S D keys">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+          </span>
+          <span>Move</span>
+        </div>
+        <div class="control-row"><kbd class="space-key">SPACE</kbd><span>Jump</span></div>
+        <div class="control-row"><span class="mouse-icon" aria-hidden="true"></span><span>Drag to look</span></div>
+      </section>
+
+      <aside class="route" aria-label="Climb route">
+        <p class="eyebrow">Route</p>
+        <ol>
+          <li class="active"><span>Base camp</span></li>
+          <li><span>Construction</span></li>
+          <li><span>Industrial</span></li>
+          <li><span>Sky</span></li>
+          <li><span>Summit</span></li>
+        </ol>
+      </aside>
+
+      <div class="telemetry" role="status" aria-live="polite">
+        <span class="status-dot"></span>
+        <span id="status-label">Starting local simulation</span>
+        <output id="player-label">No robot</output>
+        <output id="tick-label">Tick —</output>
+        <output id="speed-label">0.0 m/s</output>
+      </div>
+
+      <div class="loading" id="loading" aria-hidden="false">
+        <span></span>
+        <p id="loading-message">Powering up robot</p>
+        <code id="server-command" hidden>./build/simulation/linked-up-server</code>
+        <a id="return-link" href="./" hidden>Choose another robot</a>
+      </div>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
