@@ -13,6 +13,20 @@ jumps, and falls create consequences for the whole group.
 The v1 scope excludes grabbing, stamina, combat, accounts, progression,
 cosmetics, chat, and persistent history.
 
+## Lobby
+
+Phase 6 supports temporary rooms for two to four players. Creating a room
+assigns the host Blue Robot; invite links fill Orange, Green, and Purple in
+order. Everyone sees joins and leaves live. Only the host sees Start Game, and
+it becomes available when the selected room is full. If the host leaves, the
+first remaining player becomes host without a reload.
+
+Starting changes the room to `Starting` and shows `Preparing match...` to the
+whole crew. Phase 6 intentionally stops there: match assignment, gameplay
+tickets, and navigation into the C++ simulation require Phase 7 design
+approval. The preserved direct Blue and Orange gameplay pages remain the way
+to exercise the current playable slice.
+
 ## Tether
 
 The authoritative simulation applies no force while the tether is slack. Past

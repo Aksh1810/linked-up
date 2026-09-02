@@ -4,10 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace linked_up {
 
-enum class PlayerId : std::size_t { Blue, Orange };
+enum class RobotColor : std::size_t { Blue, Orange, Green, Purple };
+
+using PlayerId = RobotColor;  // Legacy local development server compatibility.
+
+const char* color_name(RobotColor color);
 
 struct Vec3 {
   float x{};
@@ -22,6 +27,7 @@ struct PlayerInput {
 };
 
 struct PlayerState {
+  RobotColor id{};
   Vec3 position;
   Vec3 velocity;
   bool grounded{};
@@ -29,8 +35,7 @@ struct PlayerState {
 
 struct Snapshot {
   std::uint64_t tick{};
-  std::array<PlayerState, 2> players;
-  float separation{};
+  std::vector<PlayerState> players;
   float tether_tension{};
   std::uint64_t reset_count{};
 };
@@ -41,7 +46,8 @@ struct Config {
   float acceleration{30.0f};
   float jump_speed{7.0f};
   float platform_half_extent{5.0f};
-  std::array<Vec3, 2> spawn_positions{{{-1.0f, 1.5f, 0.0f}, {1.0f, 1.5f, 0.0f}}};
+  std::array<Vec3, 4> spawn_positions{{{-1.0f, 1.5f, 0.0f}, {1.0f, 1.5f, 0.0f},
+                                        {-3.0f, 1.5f, 0.0f}, {3.0f, 1.5f, 0.0f}}};
   float tether_slack_length{4.0f};
   float tether_hard_length{7.0f};
   float tether_stiffness{45.0f};
@@ -52,13 +58,14 @@ struct Config {
 
 class PrototypeSimulation {
  public:
-  explicit PrototypeSimulation(Config config = {});
+  PrototypeSimulation();  // Legacy local development server compatibility.
+  explicit PrototypeSimulation(std::vector<RobotColor> roster, Config config = {});
   ~PrototypeSimulation();
 
   PrototypeSimulation(const PrototypeSimulation&) = delete;
   PrototypeSimulation& operator=(const PrototypeSimulation&) = delete;
 
-  void set_input(PlayerId player, PlayerInput input);
+  void set_input(RobotColor player, PlayerInput input);
   void step();
   [[nodiscard]] Snapshot snapshot() const;
   void reset();

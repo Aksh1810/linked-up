@@ -5,35 +5,41 @@ Linked-Up keeps four ownership boundaries:
 | Component | Owns |
 | --- | --- |
 | Browser | Controls, camera, rendering, animation, audio, interpolation, and local presentation |
-| C++ simulation | Fixed-step physics, player state, tether forces, obstacles, checkpoints, timer, and completion |
-| ASP.NET Core | Temporary identity, rooms, lobby presence, host rules, and match lifecycle |
+| C++ simulation | In-memory match lifecycle, ticket admission, fixed-step physics, player state, and tether forces |
+| ASP.NET Core | Temporary player sessions, rooms, lobby presence, host rules, and match orchestration |
 | Redis | Expiring room and session state |
 
 The browser sends player intent; it never sends trusted positions. ASP.NET
-coordinates match creation over gRPC but stays out of the high-frequency
-gameplay path.
+Core stays out of the high-frequency gameplay path.
 
 ```text
-Browser clients
-  ├── HTTPS / SignalR ── ASP.NET Core ── Redis
-  │                           └── gRPC ── C++ match lifecycle
-  └── low-latency gameplay ───────────── C++ simulation
+Browser -- HTTP/SignalR --> ASP.NET Core -- Redis
+ASP.NET Core -- h2c gRPC :50051 --> C++ MatchManager
+Browser -- ws match + short-lived ticket :9002 --> C++ authoritative match
 ```
 
-## Phase 5 implementation
+The API makes a deadline-bound, versioned h2c gRPC call to the loopback C++
+`MatchManager` once a full, present room starts. C++ creates the authoritative
+in-memory match and returns a launch for every ordered player. The API persists
+the room's `InGame` state, publishes its public update, and sends each launch
+only through that player's subscribed SignalR connections. Gameplay thereafter
+flows directly between browser and C++.
 
-`PrototypeSimulation` owns a small Jolt world, one static platform, two dynamic
-capsule players, validated inputs, and a configurable tether. `step()` advances
-exactly one fixed tick; the caller owns wall-clock scheduling. Snapshots expose
-plain positions, velocities, grounded state, separation, tension, tick, and
-reset count.
+## Authoritative match implementation
 
-`linked-up-server` owns one loopback-only match. Crow reserves Blue and Orange
-WebSocket slots, validates JSON input, copies the latest intent into the fixed
-60 Hz simulation loop, and broadcasts one snapshot every third tick. Each
-player state acknowledges the last input sequence actually copied and applied
-by that tick. A disconnect assigns neutral input, resets its acknowledgement,
-and frees the slot.
+`MatchManager` owns each in-memory two-to-four-player match. It mints a
+32-byte opaque ticket per player, keeps only its SHA-256 digest, compares
+digests in constant time, expires the ticket after 60 seconds, and consumes it
+on successful admission. `PrototypeSimulation` owns that match's Jolt world,
+ordered capsule roster, validated inputs, and group tether. `step()` advances
+exactly one fixed tick; the caller owns wall-clock scheduling.
+
+`linked-up-server` starts both loopback listeners: gRPC on `127.0.0.1:50051`
+and gameplay WebSockets on `127.0.0.1:9002`. Crow validates admission and JSON
+input, copies the latest intent into the fixed 60 Hz simulation loop, and
+broadcasts match snapshots every third tick. Each player state acknowledges
+the last input sequence actually applied by that tick. A disconnect neutralizes
+that player's input.
 
 The browser owns only input and presentation. `GameplayConnection` isolates the
 native WebSocket and wire codec from Babylon.js. `game.ts` sends camera-relative
@@ -46,9 +52,30 @@ snap directly. The requested local robot remains the camera target.
 
 Tether forces, collisions, platform limits, grounded truth, and resets remain
 server-only. The browser interpolates authoritative tether tension and connects
-the tether between the two displayed robot sockets; it does not simulate tether
+the tether around the displayed ordered roster; it does not simulate tether
 physics.
 
-This milestone deliberately has one match and two named development slots.
-ASP.NET Core, Redis, gRPC match orchestration, tickets, and WebTransport are
-not implemented yet.
+## Lobby-to-match handoff
+
+The root browser route creates temporary rooms with capacities from two to
+four. Invite routes join the next Blue, Orange, Green, or Purple slot. The
+browser keeps each private session token in that tab's `sessionStorage`, sends
+it only for authenticated room operations and SignalR subscription, and
+renders only the API's public room shape.
+
+ASP.NET Core owns room validation, host-only start, host migration, and the
+`waiting`/`starting`/`inGame` lifecycle. It only creates a match when every
+player has an active lobby presence; unavailable C++ creation rolls the room
+back to `waiting`. SignalR pushes public room updates and delivers each private
+`MatchReady` launch only to the matching player's connections. Presence is
+in-process for the single API instance.
+
+Redis owns optimistic room mutations, hashed lobby session tokens, and a
+sliding two-hour expiry. It contains neither gameplay snapshots nor gameplay
+tickets. Normal browsers retain the private ticket only in memory through the
+three-second countdown and use it once to open their direct WebSocket.
+
+`?player=blue|orange` remains a clearly local-only, loopback development bypass
+to a fixed two-player match. It skips the lobby and ticket boundary. Accounts,
+persistent match storage, a SignalR backplane, WebTransport, production TLS,
+and deployment work are outside this slice.

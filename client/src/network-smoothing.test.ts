@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ServerSnapshot } from "./gameplay-protocol.ts";
+import type { NetworkPlayerState, ServerSnapshot } from "./gameplay-protocol.ts";
 import {
   defaultSmoothingConfig,
   PredictionReconciler,
@@ -13,7 +13,6 @@ function snapshotAt(tick: number, orangeX: number, resetCount = 0): ServerSnapsh
     type: "snapshot",
     tick,
     resetCount,
-    separation: 2 + orangeX,
     tetherTension: orangeX / 10,
     players: [
       {
@@ -65,8 +64,29 @@ test("snapshot buffer interpolates numeric state and selects newer discrete stat
   assert.equal(midpoint.players[1].velocity.z, 6);
   assert.equal(midpoint.players[1].grounded, true);
   assert.equal(midpoint.players[1].acknowledgedInput, 106);
-  assert.equal(midpoint.separation, 5);
   assert.equal(midpoint.tetherTension, 0.3);
+});
+
+test("snapshot interpolation keeps each dynamic player matched by ID", () => {
+  const buffer = new SnapshotBuffer({ ...defaultSmoothingConfig, interpolationDelayTicks: 6 });
+  const dynamic = (tick: number, greenX: number): ServerSnapshot => ({
+    type: "snapshot", tick, resetCount: 0, tetherTension: 0,
+    players: [
+      ...snapshotAt(tick, 0).players,
+      {
+        id: "green",
+        acknowledgedInput: tick,
+        position: { x: greenX, y: 1, z: 0 },
+        velocity: { x: greenX, y: 0, z: 0 },
+        grounded: true,
+      } as NetworkPlayerState,
+    ],
+  });
+  assert(buffer.push(dynamic(100, 0), 1_000));
+  assert(buffer.push(dynamic(106, 6), 1_100));
+
+  const midpoint = buffer.sample(1_150, 60)!;
+  assert.equal(midpoint.players.find((player) => player.id === "green")!.position.x, 3);
 });
 
 test("snapshot buffer holds endpoints instead of extrapolating", () => {

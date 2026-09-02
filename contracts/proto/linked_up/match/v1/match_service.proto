@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package linkedup.match.v1;
+option csharp_namespace = "LinkedUp.Contracts.Match.V1";
+
+service MatchCoordinator {
+  rpc CreateMatch(CreateMatchRequest) returns (CreateMatchResponse);
+  rpc DestroyMatch(DestroyMatchRequest) returns (DestroyMatchResponse);
+}
+
+message Player {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  reserved 4 to 15;
+}
+
+message CreateMatchRequest {
+  string room_id = 1;
+  uint32 capacity = 2;
+  repeated Player players = 3;
+  reserved 4 to 15;
+}
+
+message PlayerLaunch {
+  string player_id = 1;
+  string color = 2;
+  string ticket = 3;
+  int64 expires_unix_ms = 4;
+  reserved 5 to 15;
+}
+
+message CreateMatchResponse {
+  string match_id = 1;
+  string gameplay_url = 2;
+  uint32 countdown_seconds = 3;
+  int64 expires_unix_ms = 4;
+  repeated PlayerLaunch launches = 5;
+  reserved 6 to 15;
+}
+
+message DestroyMatchRequest {
+  string match_id = 1;
+  reserved 2 to 15;
+}
+
+message DestroyMatchResponse {
+  bool destroyed = 1;
+  reserved 2 to 15;
+}

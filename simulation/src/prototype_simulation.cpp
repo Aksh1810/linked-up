@@ -76,10 +76,21 @@ Vec3 from_jolt(const JoltVector& value) {
           static_cast<float>(value.GetZ())};
 }
 
-std::size_t index(PlayerId player) {
-  const auto result = static_cast<std::size_t>(player);
-  if (result >= 2) throw std::invalid_argument("unknown player id");
-  return result;
+bool known_color(RobotColor color) {
+  return static_cast<std::size_t>(color) <= static_cast<std::size_t>(RobotColor::Purple);
+}
+
+void validate_roster(const std::vector<RobotColor>& roster) {
+  if (roster.size() < 2 || roster.size() > 4) {
+    throw std::invalid_argument("roster must have two to four players");
+  }
+  for (std::size_t index = 0; index < roster.size(); ++index) {
+    if (!known_color(roster[index]) ||
+        std::find(roster.begin(), roster.begin() + static_cast<std::ptrdiff_t>(index), roster[index]) !=
+            roster.begin() + static_cast<std::ptrdiff_t>(index)) {
+      throw std::invalid_argument("roster contains an invalid or repeated player color");
+    }
+  }
 }
 
 Config validated(Config config) {
@@ -105,9 +116,25 @@ Config validated(Config config) {
 
 }  // namespace
 
+const char* color_name(RobotColor color) {
+  switch (color) {
+    case RobotColor::Blue:
+      return "blue";
+    case RobotColor::Orange:
+      return "orange";
+    case RobotColor::Green:
+      return "green";
+    case RobotColor::Purple:
+      return "purple";
+  }
+  throw std::invalid_argument("unknown robot color");
+}
+
 class PrototypeSimulation::Impl {
  public:
-  explicit Impl(Config config) : config_(validated(config)) {
+  explicit Impl(std::vector<RobotColor> roster, Config config)
+      : roster_(std::move(roster)), config_(validated(config)) {
+    validate_roster(roster_);
     JPH::RegisterDefaultAllocator();
     JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = jolt_assert_failed;)
     JPH::Factory::sInstance = new JPH::Factory();
@@ -127,7 +154,10 @@ class PrototypeSimulation::Impl {
         kStaticLayer);
     floor_id_ = bodies.CreateAndAddBody(floor, JPH::EActivation::DontActivate);
 
-    for (std::size_t player = 0; player < player_ids_.size(); ++player) {
+    player_ids_.reserve(roster_.size());
+    inputs_.resize(roster_.size());
+    jump_consumed_.resize(roster_.size());
+    for (std::size_t player = 0; player < roster_.size(); ++player) {
       JPH::BodyCreationSettings settings(
           new JPH::CapsuleShape(kPlayerCapsuleHalfHeight, kPlayerRadius),
           to_jolt_position(config_.spawn_positions[player]), JPH::Quat::sIdentity(),
@@ -138,7 +168,7 @@ class PrototypeSimulation::Impl {
       settings.mLinearDamping = 0.05f;
       settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
       settings.mMassPropertiesOverride.mMass = 1.0f;
-      player_ids_[player] = bodies.CreateAndAddBody(settings, JPH::EActivation::Activate);
+      player_ids_.push_back(bodies.CreateAndAddBody(settings, JPH::EActivation::Activate));
     }
     physics_.OptimizeBroadPhase();
   }
@@ -156,14 +186,14 @@ class PrototypeSimulation::Impl {
     JPH::Factory::sInstance = nullptr;
   }
 
-  void set_input(PlayerId player, PlayerInput input) {
+  void set_input(RobotColor player, PlayerInput input) {
     if (!finite(input.move_x) || !finite(input.move_z)) input = {};
     const float length = std::hypot(input.move_x, input.move_z);
     if (length > 1.0f) {
       input.move_x /= length;
       input.move_z /= length;
     }
-    inputs_[index(player)] = input;
+    inputs_[player_index(player)] = input;
   }
 
   void step() {
@@ -218,15 +248,12 @@ class PrototypeSimulation::Impl {
     result.reset_count = reset_count_;
     result.tether_tension = tether_tension_;
     const auto& bodies = physics_.GetBodyInterface();
+    result.players.reserve(player_ids_.size());
     for (std::size_t player = 0; player < player_ids_.size(); ++player) {
-      result.players[player].position = from_jolt(bodies.GetPosition(player_ids_[player]));
-      result.players[player].velocity = from_jolt(bodies.GetLinearVelocity(player_ids_[player]));
-      result.players[player].grounded = is_grounded(player);
+      result.players.push_back({roster_[player], from_jolt(bodies.GetPosition(player_ids_[player])),
+                                from_jolt(bodies.GetLinearVelocity(player_ids_[player])),
+                                is_grounded(player)});
     }
-    const Vec3 delta{result.players[1].position.x - result.players[0].position.x,
-                     result.players[1].position.y - result.players[0].position.y,
-                     result.players[1].position.z - result.players[0].position.z};
-    result.separation = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
     return result;
   }
 
@@ -245,6 +272,12 @@ class PrototypeSimulation::Impl {
   }
 
  private:
+  std::size_t player_index(RobotColor player) const {
+    const auto found = std::find(roster_.begin(), roster_.end(), player);
+    if (found == roster_.end()) throw std::invalid_argument("player is not in the roster");
+    return static_cast<std::size_t>(found - roster_.begin());
+  }
+
   bool is_grounded(std::size_t player) const {
     const auto& bodies = physics_.GetBodyInterface();
     const auto position = bodies.GetPosition(player_ids_[player]);
@@ -257,53 +290,77 @@ class PrototypeSimulation::Impl {
 
   void apply_tether() {
     auto& bodies = physics_.GetBodyInterface();
-    const JPH::RVec3 first = bodies.GetPosition(player_ids_[0]);
-    const JPH::RVec3 second = bodies.GetPosition(player_ids_[1]);
-    const JPH::Vec3 delta = JPH::Vec3(second - first);
-    const float distance = delta.Length();
     tether_tension_ = 0.0f;
-    if (distance <= config_.tether_slack_length || distance < 0.0001f) return;
+    std::vector<JPH::RVec3> positions;
+    std::vector<JPH::Vec3> velocities;
+    positions.reserve(player_ids_.size());
+    velocities.reserve(player_ids_.size());
+    for (const auto body : player_ids_) {
+      positions.push_back(bodies.GetPosition(body));
+      velocities.push_back(bodies.GetLinearVelocity(body));
+    }
 
-    const JPH::Vec3 direction = delta / distance;
-    const JPH::Vec3 relative_velocity =
-        bodies.GetLinearVelocity(player_ids_[1]) - bodies.GetLinearVelocity(player_ids_[0]);
-    const float separating_speed = relative_velocity.Dot(direction);
-    const float force =
-        std::clamp(config_.tether_stiffness * (distance - config_.tether_slack_length) +
-                       config_.tether_damping * separating_speed,
-                   0.0f, config_.tether_max_force);
-    bodies.AddForce(player_ids_[0], direction * force);
-    bodies.AddForce(player_ids_[1], -direction * force);
-    tether_tension_ = force / config_.tether_max_force;
+    for (std::size_t player = 0; player < player_ids_.size(); ++player) {
+      JPH::RVec3 average_position = JPH::RVec3::sZero();
+      JPH::Vec3 average_velocity = JPH::Vec3::sZero();
+      for (std::size_t teammate = 0; teammate < player_ids_.size(); ++teammate) {
+        if (teammate == player) continue;
+        average_position += positions[teammate];
+        average_velocity += velocities[teammate];
+      }
+      const float teammate_count = static_cast<float>(player_ids_.size() - 1);
+      average_position /= teammate_count;
+      average_velocity /= teammate_count;
+      const JPH::Vec3 inward = JPH::Vec3(average_position - positions[player]);
+      const float distance = inward.Length();
+      if (distance <= config_.tether_slack_length || distance < 0.0001f) continue;
+
+      const JPH::Vec3 direction = inward / distance;
+      const float outward_speed = (velocities[player] - average_velocity).Dot(-direction);
+      const float force =
+          std::clamp(config_.tether_stiffness * (distance - config_.tether_slack_length) +
+                         config_.tether_damping * outward_speed,
+                     0.0f, config_.tether_max_force);
+      bodies.AddForce(player_ids_[player], direction * force);
+      tether_tension_ = std::max(tether_tension_, force / config_.tether_max_force);
+    }
   }
 
   void enforce_hard_tether_limit() {
     auto& bodies = physics_.GetBodyInterface();
-    JPH::RVec3 first = bodies.GetPosition(player_ids_[0]);
-    JPH::RVec3 second = bodies.GetPosition(player_ids_[1]);
-    const JPH::Vec3 delta = JPH::Vec3(second - first);
-    const float distance = delta.Length();
-    if (distance <= config_.tether_hard_length || distance < 0.0001f) return;
-
-    const JPH::Vec3 direction = delta / distance;
-    const float half_correction = (distance - config_.tether_hard_length) * 0.5f;
-    first += direction * half_correction;
-    second -= direction * half_correction;
-
-    JPH::Vec3 first_velocity = bodies.GetLinearVelocity(player_ids_[0]);
-    JPH::Vec3 second_velocity = bodies.GetLinearVelocity(player_ids_[1]);
-    const float separating_speed = (second_velocity - first_velocity).Dot(direction);
-    if (separating_speed > 0.0f) {
-      const JPH::Vec3 correction = direction * (separating_speed * 0.5f);
-      first_velocity += correction;
-      second_velocity -= correction;
+    std::vector<JPH::RVec3> positions;
+    std::vector<JPH::Vec3> velocities;
+    positions.reserve(player_ids_.size());
+    velocities.reserve(player_ids_.size());
+    for (const auto body : player_ids_) {
+      positions.push_back(bodies.GetPosition(body));
+      velocities.push_back(bodies.GetLinearVelocity(body));
     }
-    bodies.SetPositionRotationAndVelocity(player_ids_[0], first, JPH::Quat::sIdentity(),
-                                          first_velocity, JPH::Vec3::sZero());
-    bodies.SetPositionRotationAndVelocity(player_ids_[1], second, JPH::Quat::sIdentity(),
-                                          second_velocity, JPH::Vec3::sZero());
+
+    for (std::size_t player = 0; player < player_ids_.size(); ++player) {
+      JPH::RVec3 average_position = JPH::RVec3::sZero();
+      for (std::size_t teammate = 0; teammate < player_ids_.size(); ++teammate) {
+        if (teammate == player) continue;
+        average_position += positions[teammate];
+      }
+      const float teammate_count = static_cast<float>(player_ids_.size() - 1);
+      average_position /= teammate_count;
+      const JPH::Vec3 inward = JPH::Vec3(average_position - positions[player]);
+      const float distance = inward.Length();
+      if (distance <= config_.tether_hard_length || distance < 0.0001f) continue;
+
+      const JPH::Vec3 direction = inward / distance;
+      const JPH::Vec3 outward = -direction;
+      JPH::Vec3 velocity = velocities[player];
+      const float outward_speed = velocity.Dot(outward);
+      if (outward_speed > 0.0f) velocity -= outward * outward_speed;
+      bodies.SetPositionRotationAndVelocity(player_ids_[player],
+                                            positions[player] + direction * (distance - config_.tether_hard_length),
+                                            JPH::Quat::sIdentity(), velocity, JPH::Vec3::sZero());
+    }
   }
 
+  std::vector<RobotColor> roster_;
   Config config_;
   BroadPhaseLayers broad_phase_layers_;
   ObjectVsBroadPhase object_vs_broad_phase_;
@@ -312,19 +369,23 @@ class PrototypeSimulation::Impl {
   std::unique_ptr<JPH::TempAllocatorMalloc> allocator_;
   std::unique_ptr<JPH::JobSystemThreadPool> jobs_;
   JPH::BodyID floor_id_;
-  std::array<JPH::BodyID, 2> player_ids_;
-  std::array<PlayerInput, 2> inputs_;
-  std::array<bool, 2> jump_consumed_{};
+  std::vector<JPH::BodyID> player_ids_;
+  std::vector<PlayerInput> inputs_;
+  std::vector<bool> jump_consumed_;
   std::uint64_t tick_{};
   std::uint64_t reset_count_{};
   float tether_tension_{};
 };
 
-PrototypeSimulation::PrototypeSimulation(Config config) : impl_(std::make_unique<Impl>(config)) {}
+PrototypeSimulation::PrototypeSimulation()
+    : PrototypeSimulation({RobotColor::Blue, RobotColor::Orange}) {}
+
+PrototypeSimulation::PrototypeSimulation(std::vector<RobotColor> roster, Config config)
+    : impl_(std::make_unique<Impl>(std::move(roster), config)) {}
 
 PrototypeSimulation::~PrototypeSimulation() = default;
 
-void PrototypeSimulation::set_input(PlayerId player, PlayerInput input) {
+void PrototypeSimulation::set_input(RobotColor player, PlayerInput input) {
   impl_->set_input(player, input);
 }
 

@@ -4,12 +4,14 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
+#include <vector>
 
 namespace {
 
 using linked_up::Config;
-using linked_up::PlayerId;
 using linked_up::PlayerInput;
+using linked_up::RobotColor;
 using linked_up::PrototypeSimulation;
 using linked_up::Vec3;
 
@@ -23,30 +25,34 @@ Vec3 subtract(Vec3 left, Vec3 right) {
   return {left.x - right.x, left.y - right.y, left.z - right.z};
 }
 
-void bounded_separation() {
+float length(Vec3 value) { return std::sqrt(dot(value, value)); }
+
+void two_player_tether_hard_limit_is_authoritative() {
   Config config;
   config.platform_half_extent = 20.0f;
   config.tether_slack_length = 2.0f;
   config.tether_hard_length = 5.0f;
-  PrototypeSimulation simulation(config);
-  simulation.set_input(PlayerId::Blue, {-1.0f, 0.0f, false});
-  simulation.set_input(PlayerId::Orange, {1.0f, 0.0f, false});
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.set_input(RobotColor::Blue, {-1.0f, 0.0f, false});
+  simulation.set_input(RobotColor::Orange, {1.0f, 0.0f, false});
 
   for (int tick = 0; tick < 600; ++tick) simulation.step();
 
-  assert(simulation.snapshot().separation <= config.tether_hard_length + 0.02f);
+  const auto state = simulation.snapshot();
+  assert(length(subtract(state.players[1].position, state.players[0].position)) <=
+         config.tether_hard_length + 0.02f);
 }
 
 void movement_and_jump_are_authoritative() {
-  PrototypeSimulation simulation;
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange});
   for (int tick = 0; tick < 90; ++tick) simulation.step();
   const float start_x = simulation.snapshot().players[0].position.x;
 
-  simulation.set_input(PlayerId::Blue, {1.0f, 0.0f, false});
+  simulation.set_input(RobotColor::Blue, {1.0f, 0.0f, false});
   for (int tick = 0; tick < 30; ++tick) simulation.step();
   assert(simulation.snapshot().players[0].position.x > start_x + 0.2f);
 
-  simulation.set_input(PlayerId::Blue, {1.0f, 0.0f, true});
+  simulation.set_input(RobotColor::Blue, {1.0f, 0.0f, true});
   simulation.step();
   assert(simulation.snapshot().players[0].velocity.y > 1.0f);
 }
@@ -57,8 +63,8 @@ void falling_player_pulls_teammate() {
   config.spawn_positions = {{{0.0f, 1.5f, 0.0f}, {1.5f, 1.5f, 0.0f}}};
   config.tether_slack_length = 1.0f;
   config.tether_hard_length = 6.0f;
-  PrototypeSimulation simulation(config);
-  simulation.set_input(PlayerId::Orange, {1.0f, 0.0f, false});
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.set_input(RobotColor::Orange, {1.0f, 0.0f, false});
 
   bool observed_fall_pull = false;
   for (int tick = 0; tick < 360 && !observed_fall_pull; ++tick) {
@@ -75,10 +81,10 @@ void falling_player_pulls_teammate() {
 }
 
 void malformed_input_is_neutral() {
-  PrototypeSimulation simulation;
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange});
   const float nan = std::numeric_limits<float>::quiet_NaN();
   const float infinity = std::numeric_limits<float>::infinity();
-  simulation.set_input(PlayerId::Blue, {nan, infinity, true});
+  simulation.set_input(RobotColor::Blue, {nan, infinity, true});
 
   for (int tick = 0; tick < 120; ++tick) simulation.step();
 
@@ -90,8 +96,8 @@ void malformed_input_is_neutral() {
 
 void reset_restores_spawn_state() {
   Config config;
-  PrototypeSimulation simulation(config);
-  simulation.set_input(PlayerId::Blue, {1.0f, 0.0f, true});
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.set_input(RobotColor::Blue, {1.0f, 0.0f, true});
   for (int tick = 0; tick < 30; ++tick) simulation.step();
 
   simulation.reset();
@@ -109,13 +115,72 @@ void reset_restores_spawn_state() {
   }
 }
 
+void three_and_four_player_rosters_are_authoritative() {
+  for (const auto& roster : std::vector<std::vector<RobotColor>>{
+           {RobotColor::Blue, RobotColor::Orange, RobotColor::Green},
+           {RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple}}) {
+    PrototypeSimulation simulation(roster);
+    for (int tick = 0; tick < 120; ++tick) simulation.step();
+    const auto snapshot = simulation.snapshot();
+    assert(snapshot.players.size() == roster.size());
+    for (std::size_t index = 0; index < roster.size(); ++index) {
+      assert(snapshot.players[index].id == roster[index]);
+    }
+  }
+}
+
+void group_tether_pulls_an_outlier_toward_its_teammates() {
+  Config config;
+  config.platform_half_extent = 20.0f;
+  config.tether_slack_length = 1.0f;
+  PrototypeSimulation simulation(
+      {RobotColor::Blue, RobotColor::Orange, RobotColor::Green}, config);
+  const auto initial = simulation.snapshot();
+  const Vec3 initial_average{
+      (initial.players[0].position.x + initial.players[1].position.x) * 0.5f,
+      (initial.players[0].position.y + initial.players[1].position.y) * 0.5f,
+      (initial.players[0].position.z + initial.players[1].position.z) * 0.5f,
+  };
+  const float initial_distance = length(subtract(initial.players[2].position, initial_average));
+
+  simulation.set_input(RobotColor::Green, {-1.0f, 0.0f, false});
+  for (int tick = 0; tick < 360; ++tick) simulation.step();
+  const auto state = simulation.snapshot();
+  const Vec3 average{
+      (state.players[0].position.x + state.players[1].position.x) * 0.5f,
+      (state.players[0].position.y + state.players[1].position.y) * 0.5f,
+      (state.players[0].position.z + state.players[1].position.z) * 0.5f,
+  };
+  assert(length(subtract(state.players[2].position, average)) < initial_distance);
+  assert(state.tether_tension > 0.0f);
+}
+
+void invalid_rosters_are_rejected() {
+  for (const auto& roster : std::vector<std::vector<RobotColor>>{
+           {RobotColor::Blue},
+           {RobotColor::Blue, RobotColor::Blue},
+           {RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple,
+            RobotColor::Blue}}) {
+    bool rejected = false;
+    try {
+      PrototypeSimulation simulation(roster);
+    } catch (const std::invalid_argument&) {
+      rejected = true;
+    }
+    assert(rejected);
+  }
+}
+
 }  // namespace
 
 int main() {
   movement_and_jump_are_authoritative();
-  bounded_separation();
+  two_player_tether_hard_limit_is_authoritative();
   falling_player_pulls_teammate();
   malformed_input_is_neutral();
   reset_restores_spawn_state();
+  three_and_four_player_rosters_are_authoritative();
+  group_tether_pulls_an_outlier_toward_its_teammates();
+  invalid_rosters_are_rejected();
   std::cout << "authoritative tether checks passed\n";
 }

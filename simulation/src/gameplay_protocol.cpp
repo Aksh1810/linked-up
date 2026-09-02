@@ -2,6 +2,7 @@
 
 #include <crow/json.h>
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -25,14 +26,17 @@ bool boolean(const crow::json::rvalue& value) {
   return value.t() == crow::json::type::True || value.t() == crow::json::type::False;
 }
 
-const char* player_name(PlayerId player) {
-  switch (player) {
-    case PlayerId::Blue:
-      return "blue";
-    case PlayerId::Orange:
-      return "orange";
+void validate_roster(const std::vector<RobotColor>& roster) {
+  if (roster.size() < 2 || roster.size() > 4) {
+    throw std::invalid_argument("roster must contain two to four unique colors");
   }
-  throw std::invalid_argument("unknown player id");
+  for (std::size_t index = 0; index < roster.size(); ++index) {
+    static_cast<void>(color_name(roster[index]));
+    if (std::find(roster.begin(), roster.begin() + static_cast<std::ptrdiff_t>(index), roster[index]) !=
+        roster.begin() + static_cast<std::ptrdiff_t>(index)) {
+      throw std::invalid_argument("roster must contain two to four unique colors");
+    }
+  }
 }
 
 std::pair<const char*, const char*> error_details(ProtocolError error) {
@@ -49,6 +53,8 @@ std::pair<const char*, const char*> error_details(ProtocolError error) {
       return {"invalid_player", "Choose Blue or Orange."};
     case ProtocolError::SlotTaken:
       return {"slot_taken", "That player is already connected."};
+    case ProtocolError::InvalidTicket:
+      return {"invalid_ticket", "Gameplay connection is not valid."};
     case ProtocolError::BinaryMessage:
       return {"binary_message", "Gameplay messages must be JSON text."};
     case ProtocolError::None:
@@ -109,34 +115,55 @@ InputResult InputGate::accept(std::string_view message, Clock::time_point now) {
   }
 }
 
-std::string serialize_welcome(PlayerId player) {
+std::string serialize_welcome(RobotColor player, const std::vector<RobotColor>& roster) {
+  validate_roster(roster);
+  if (std::find(roster.begin(), roster.end(), player) == roster.end()) {
+    throw std::invalid_argument("welcome player is not in the roster");
+  }
   crow::json::wvalue message;
   message["type"] = "welcome";
-  message["player"] = player_name(player);
+  message["player"] = color_name(player);
+  for (std::size_t index = 0; index < roster.size(); ++index) {
+    message["players"][index] = color_name(roster[index]);
+  }
   message["tickRate"] = 60;
   message["snapshotRate"] = 20;
   return message.dump();
 }
 
+std::string serialize_welcome(RobotColor player) {
+  return serialize_welcome(player, {RobotColor::Blue, RobotColor::Orange});
+}
+
 std::string serialize_snapshot(
     const Snapshot& snapshot,
-    const std::array<std::uint64_t, 2>& acknowledged_inputs) {
+    const std::vector<std::uint64_t>& acknowledged_inputs) {
+  if (snapshot.players.size() != acknowledged_inputs.size()) {
+    throw std::invalid_argument("acknowledged inputs must match snapshot players");
+  }
   crow::json::wvalue message;
   message["type"] = "snapshot";
   message["tick"] = snapshot.tick;
   message["resetCount"] = snapshot.reset_count;
-  message["separation"] = snapshot.separation;
   message["tetherTension"] = snapshot.tether_tension;
 
-  for (unsigned index = 0; index < snapshot.players.size(); ++index) {
+  for (std::size_t index = 0; index < snapshot.players.size(); ++index) {
     auto& player = message["players"][index];
-    player["id"] = player_name(static_cast<PlayerId>(index));
+    player["id"] = color_name(snapshot.players[index].id);
     player["acknowledgedInput"] = acknowledged_inputs[index];
     write_vector(player["position"], snapshot.players[index].position);
     write_vector(player["velocity"], snapshot.players[index].velocity);
     player["grounded"] = snapshot.players[index].grounded;
   }
   return message.dump();
+}
+
+std::string serialize_snapshot(
+    const Snapshot& snapshot,
+    const std::array<std::uint64_t, 2>& acknowledged_inputs) {
+  return serialize_snapshot(snapshot,
+                            std::vector<std::uint64_t>(acknowledged_inputs.begin(),
+                                                       acknowledged_inputs.end()));
 }
 
 std::string serialize_error(ProtocolError error) {

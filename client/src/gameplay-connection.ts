@@ -7,6 +7,10 @@ import {
   type WelcomeMessage,
 } from "./gameplay-protocol";
 
+export type GameplayConnectionIdentity =
+  | { matchId: string; ticket: string }
+  | { player: PlayerId };
+
 export interface GameplayConnectionHandlers {
   onWelcome(message: WelcomeMessage): void;
   onSnapshot(message: ServerSnapshot): void;
@@ -18,10 +22,16 @@ export class GameplayConnection {
   readonly #url: URL;
   readonly #handlers: GameplayConnectionHandlers;
   #socket?: WebSocket;
+  #roster?: readonly PlayerId[];
 
-  constructor(url: string, player: PlayerId, handlers: GameplayConnectionHandlers) {
+  constructor(url: string, identity: GameplayConnectionIdentity, handlers: GameplayConnectionHandlers) {
     this.#url = new URL(url, window.location.href);
-    this.#url.searchParams.set("player", player);
+    if ("matchId" in identity) {
+      this.#url.searchParams.set("match", identity.matchId);
+      this.#url.searchParams.set("ticket", identity.ticket);
+    } else {
+      this.#url.searchParams.set("player", identity.player);
+    }
     this.#handlers = handlers;
   }
 
@@ -38,9 +48,15 @@ export class GameplayConnection {
         return;
       }
       try {
-        const message = parseServerMessage(data);
-        if (message.type === "welcome") this.#handlers.onWelcome(message);
-        if (message.type === "snapshot") this.#handlers.onSnapshot(message);
+        const message = parseServerMessage(data, this.#roster);
+        if (message.type === "welcome") {
+          this.#roster = message.players;
+          this.#handlers.onWelcome(message);
+        }
+        if (message.type === "snapshot") {
+          if (!this.#roster) throw new Error("roster mismatch");
+          this.#handlers.onSnapshot(message);
+        }
         if (message.type === "error") this.#handlers.onError(message.message);
       } catch {
         this.#handlers.onError("Gameplay server sent an invalid message.");

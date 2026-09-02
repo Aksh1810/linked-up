@@ -2,18 +2,19 @@
 
 #include <crow/json.h>
 
-#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <stdexcept>
+#include <vector>
 
 namespace {
 
 using linked_up::InputGate;
-using linked_up::PlayerId;
 using linked_up::ProtocolError;
+using linked_up::RobotColor;
 using linked_up::Snapshot;
 
 void valid_input_is_decoded() {
@@ -74,41 +75,75 @@ void stale_and_excessive_input_is_rejected() {
   assert(rate_gate.accept(next_window, now + std::chrono::seconds(1)).value.has_value());
 }
 
-void server_messages_preserve_authoritative_state() {
+void roster_aware_server_messages_preserve_authoritative_state() {
   Snapshot snapshot;
   snapshot.tick = 180;
   snapshot.reset_count = 2;
-  snapshot.separation = 3.25f;
   snapshot.tether_tension = 0.18f;
-  snapshot.players[0] = {{-1.0f, 1.0f, 2.0f}, {0.5f, 0.0f, 0.0f}, true};
-  snapshot.players[1] = {{1.0f, 2.0f, -2.0f}, {0.0f, -1.0f, 0.25f}, false};
+  snapshot.players = {
+      {RobotColor::Blue, {-1.0f, 1.0f, 2.0f}, {0.5f, 0.0f, 0.0f}, true},
+      {RobotColor::Orange, {1.0f, 2.0f, -2.0f}, {0.0f, -1.0f, 0.25f}, false},
+      {RobotColor::Green, {3.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, true},
+      {RobotColor::Purple, {-3.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, false},
+  };
 
   const auto message = crow::json::load(
-      linked_up::serialize_snapshot(snapshot, std::array<std::uint64_t, 2>{41, 73}));
+      linked_up::serialize_snapshot(snapshot, {41, 73, 101, 151}));
   assert(message);
   assert(message["type"].s() == "snapshot");
   assert(message["tick"].u() == 180);
   assert(message["resetCount"].u() == 2);
-  assert(std::abs(message["separation"].d() - 3.25) < 0.001);
   assert(std::abs(message["tetherTension"].d() - 0.18) < 0.001);
-  assert(message["players"].size() == 2);
+  assert(!message.has("separation"));
+  assert(message["players"].size() == 4);
   assert(message["players"][0]["id"].s() == "blue");
   assert(message["players"][1]["id"].s() == "orange");
+  assert(message["players"][2]["id"].s() == "green");
+  assert(message["players"][3]["id"].s() == "purple");
   assert(message["players"][0]["acknowledgedInput"].u() == 41);
   assert(message["players"][1]["acknowledgedInput"].u() == 73);
+  assert(message["players"][2]["acknowledgedInput"].u() == 101);
+  assert(message["players"][3]["acknowledgedInput"].u() == 151);
   assert(std::abs(message["players"][0]["position"]["x"].d() + 1.0) < 0.001);
   assert(message["players"][0]["grounded"].b());
   assert(!message["players"][1]["grounded"].b());
 
-  const auto welcome = crow::json::load(linked_up::serialize_welcome(PlayerId::Orange));
+  const auto welcome = crow::json::load(linked_up::serialize_welcome(
+      RobotColor::Orange,
+      {RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple}));
   assert(welcome["type"].s() == "welcome");
   assert(welcome["player"].s() == "orange");
+  assert(welcome["players"].size() == 4);
+  assert(welcome["players"][0].s() == "blue");
+  assert(welcome["players"][1].s() == "orange");
+  assert(welcome["players"][2].s() == "green");
+  assert(welcome["players"][3].s() == "purple");
   assert(welcome["tickRate"].u() == 60);
   assert(welcome["snapshotRate"].u() == 20);
 
   const auto error = crow::json::load(linked_up::serialize_error(ProtocolError::SlotTaken));
   assert(error["type"].s() == "error");
   assert(error["code"].s() == "slot_taken");
+
+  const auto invalid_ticket = crow::json::load(linked_up::serialize_error(ProtocolError::InvalidTicket));
+  assert(invalid_ticket["code"].s() == "invalid_ticket");
+  assert(invalid_ticket["message"].s() == "Gameplay connection is not valid.");
+}
+
+void invalid_welcome_rosters_are_rejected() {
+  for (const auto& roster : std::vector<std::vector<RobotColor>>{
+           {RobotColor::Blue},
+           {RobotColor::Blue, RobotColor::Blue},
+           {RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple,
+            RobotColor::Blue}}) {
+    bool rejected = false;
+    try {
+      static_cast<void>(linked_up::serialize_welcome(RobotColor::Blue, roster));
+    } catch (const std::invalid_argument&) {
+      rejected = true;
+    }
+    assert(rejected);
+  }
 }
 
 }  // namespace
@@ -117,6 +152,7 @@ int main() {
   valid_input_is_decoded();
   malformed_and_out_of_range_input_is_rejected();
   stale_and_excessive_input_is_rejected();
-  server_messages_preserve_authoritative_state();
+  roster_aware_server_messages_preserve_authoritative_state();
+  invalid_welcome_rosters_are_rejected();
   std::cout << "gameplay protocol checks passed\n";
 }

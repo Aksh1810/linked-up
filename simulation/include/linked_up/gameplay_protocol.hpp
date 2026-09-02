@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "linked_up/prototype_simulation.hpp"
 
@@ -20,6 +21,7 @@ enum class ProtocolError {
   RateLimited,
   InvalidPlayer,
   SlotTaken,
+  InvalidTicket,
   BinaryMessage,
 };
 
@@ -46,7 +48,11 @@ class InputGate {
   std::size_t messages_in_window_{};
 };
 
-std::string serialize_welcome(PlayerId player);
+std::string serialize_welcome(RobotColor player, const std::vector<RobotColor>& roster);
+std::string serialize_welcome(RobotColor player);
+std::string serialize_snapshot(
+    const Snapshot& snapshot,
+    const std::vector<std::uint64_t>& acknowledged_inputs);
 std::string serialize_snapshot(
     const Snapshot& snapshot,
     const std::array<std::uint64_t, 2>& acknowledged_inputs);

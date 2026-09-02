@@ -14,7 +14,7 @@ import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 
-import { GameplayConnection } from "./gameplay-connection";
+import { GameplayConnection, type GameplayConnectionIdentity } from "./gameplay-connection";
 import type {
   ClientInput,
   NetworkPlayerState,
@@ -36,32 +36,36 @@ interface RobotVisual {
 }
 
 export interface GameOptions {
-  player: PlayerId;
   gameplayUrl: string;
+  identity: GameplayConnectionIdentity;
   onReady(): void;
   onStatus(message: string): void;
   onError(message: string): void;
 }
 
-const playerName = (player: PlayerId): string => player === "blue" ? "Blue" : "Orange";
+const playerName = (player: PlayerId): string => ({
+  blue: "Blue", orange: "Orange", green: "Green", purple: "Purple",
+})[player];
 
 export class Game {
   readonly #engine: AbstractEngine;
   readonly #scene: Scene;
   readonly #camera: ArcRotateCamera;
   readonly #input = new InputController();
-  readonly #robots: Record<PlayerId, RobotVisual>;
+  readonly #robots = new Map<PlayerId, RobotVisual>();
   readonly #tether: LinesMesh;
   readonly #connection: GameplayConnection;
   readonly #options: GameOptions;
   readonly #speedLabel: HTMLOutputElement;
   readonly #tickLabel: HTMLOutputElement;
-  readonly #headings: Record<PlayerId, number> = { blue: 0, orange: 0 };
-  readonly #animationTimes: Record<PlayerId, number> = { blue: 0, orange: 0 };
+  readonly #headings = new Map<PlayerId, number>();
+  readonly #animationTimes = new Map<PlayerId, number>();
   readonly #snapshots = new SnapshotBuffer();
   #snapshot?: ServerSnapshot;
   #predictor?: PredictionReconciler;
   #tickRate?: number;
+  #player?: PlayerId;
+  #roster: readonly PlayerId[] = [];
   #sequence = 0;
   #clientTick = 0;
   #inputElapsed = 0;
@@ -110,15 +114,9 @@ export class Game {
     fill.groundColor = Color3.FromHexString("#315947");
 
     this.#createWorld();
-    this.#robots = {
-      blue: this.#createRobot("blue"),
-      orange: this.#createRobot("orange"),
-    };
-    this.#robots.blue.root.position.set(-1, 1, 0);
-    this.#robots.orange.root.position.set(1, 1, 0);
     this.#tether = MeshBuilder.CreateLines(
       "energy-tether",
-      { points: this.#tetherPoints(), updatable: true },
+      { points: [Vector3.Zero(), Vector3.Zero()], updatable: true },
       this.#scene,
     );
     this.#tether.color = Color3.FromHexString("#ff914d");
@@ -129,15 +127,15 @@ export class Game {
     this.#speedLabel = speedLabel;
     this.#tickLabel = tickLabel;
 
-    this.#connection = new GameplayConnection(options.gameplayUrl, options.player, {
+    this.#connection = new GameplayConnection(options.gameplayUrl, options.identity, {
       onWelcome: this.#onWelcome,
       onSnapshot: this.#onSnapshot,
       onError: options.onError,
       onStatus: (status) => {
         const text = status === "connecting"
-          ? `Connecting as ${playerName(options.player)}`
+          ? "Connecting to gameplay server"
           : status === "connected"
-            ? `Connected as ${playerName(options.player)}`
+            ? "Connected to gameplay server"
             : "Gameplay server disconnected";
         options.onStatus(text);
       },
@@ -194,8 +192,12 @@ export class Game {
   }
 
   #createRobot(id: PlayerId): RobotVisual {
-    const main = this.#material(`${id}-main`, id === "blue" ? "#38bdf8" : "#ff914d");
-    const dark = this.#material(`${id}-dark`, id === "blue" ? "#167ca8" : "#bd5c20");
+    const colors: Record<PlayerId, readonly [string, string]> = {
+      blue: ["#38bdf8", "#167ca8"], orange: ["#ff914d", "#bd5c20"],
+      green: ["#65c66a", "#3d944f"], purple: ["#b58cff", "#7046bf"],
+    };
+    const main = this.#material(`${id}-main`, colors[id][0]);
+    const dark = this.#material(`${id}-dark`, colors[id][1]);
     const joint = this.#material(`${id}-joint`, "#173449");
     const visor = this.#material(`${id}-visor`, "#10243a", "#5ee7ff");
     const socketMaterial = this.#material(`${id}-socket`, "#ffb15c", "#ff914d");
@@ -264,14 +266,13 @@ export class Game {
   }
 
   readonly #onWelcome = (message: WelcomeMessage): void => {
-    if (message.player !== this.#options.player) {
-      this.#options.onError("Gameplay server assigned the wrong robot.");
-      this.#connection.dispose();
-      return;
-    }
+    this.#player = message.player;
+    this.#roster = message.players;
+    this.#ensureRoster(message.players);
     this.#tickRate = message.tickRate;
-    this.#predictor = new PredictionReconciler(this.#options.player, message.tickRate);
+    this.#predictor = new PredictionReconciler(message.player, message.tickRate);
     this.#welcomed = true;
+    this.#options.onStatus(`Connected as ${playerName(message.player)}`);
     this.#finishStartup();
   };
 
@@ -292,14 +293,16 @@ export class Game {
   readonly #frame = (): void => {
     const delta = Math.min(this.#engine.getDeltaTime() / 1000, 0.1);
     this.#predictor?.advanceCorrection(delta * 1_000);
-    if (this.#snapshot && this.#tickRate) {
-      const localIndex = this.#options.player === "blue" ? 0 : 1;
-      const remoteIndex = localIndex === 0 ? 1 : 0;
+    if (this.#snapshot && this.#tickRate && this.#player) {
       const sampled = this.#snapshots.sample(performance.now(), this.#tickRate);
-      const local = this.#predictor?.renderState() ?? this.#snapshot.players[localIndex];
-      const remote = sampled?.players[remoteIndex] ?? this.#snapshot.players[remoteIndex];
-      for (const state of [local, remote]) {
-        this.#robots[state.id].root.position.set(
+      const local = this.#predictor?.renderState() ?? this.#snapshot.players.find(({ id }) => id === this.#player);
+      if (!local) return;
+      const states = (sampled?.players ?? this.#snapshot.players).map(
+        (state) => state.id === this.#player ? local : state,
+      );
+      for (const state of states) {
+        const robot = this.#robots.get(state.id)!;
+        robot.root.position.set(
           state.position.x,
           state.position.y,
           state.position.z,
@@ -335,39 +338,50 @@ export class Game {
     this.#scene.render();
   };
 
+  #ensureRoster(players: readonly PlayerId[]): void {
+    for (const player of players) {
+      if (!this.#robots.has(player)) this.#robots.set(player, this.#createRobot(player));
+      if (!this.#headings.has(player)) this.#headings.set(player, 0);
+      if (!this.#animationTimes.has(player)) this.#animationTimes.set(player, 0);
+    }
+  }
+
   #animateRobot(state: NetworkPlayerState, delta: number): void {
-    const robot = this.#robots[state.id];
+    const robot = this.#robots.get(state.id)!;
     const speed = Math.hypot(state.velocity.x, state.velocity.z);
     if (speed > 0.08) {
       const target = Math.atan2(state.velocity.x, state.velocity.z);
-      const heading = this.#headings[state.id];
+      const heading = this.#headings.get(state.id)!;
       const difference = Math.atan2(Math.sin(target - heading), Math.cos(target - heading));
-      this.#headings[state.id] += difference * (1 - Math.exp(-12 * delta));
+      this.#headings.set(state.id, heading + difference * (1 - Math.exp(-12 * delta)));
     }
-    robot.root.rotation.y = this.#headings[state.id];
+    robot.root.rotation.y = this.#headings.get(state.id)!;
 
-    this.#animationTimes[state.id] += delta;
+    this.#animationTimes.set(state.id, this.#animationTimes.get(state.id)! + delta);
     const runAmount = Math.min(speed / 3.5, 1);
-    const swing = Math.sin(this.#animationTimes[state.id] * 11) * 0.62 * runAmount;
+    const animationTime = this.#animationTimes.get(state.id)!;
+    const swing = Math.sin(animationTime * 11) * 0.62 * runAmount;
     robot.leftArm.rotation.x = swing;
     robot.rightArm.rotation.x = -swing;
     robot.leftLeg.rotation.x = -swing * 0.72;
     robot.rightLeg.rotation.x = swing * 0.72;
     robot.visual.position.y =
-      Math.sin(this.#animationTimes[state.id] * (speed > 0.1 ? 11 : 2.2)) *
+      Math.sin(animationTime * (speed > 0.1 ? 11 : 2.2)) *
       (speed > 0.1 ? 0.035 : 0.025);
     robot.visual.scaling.y = state.grounded ? 1 : 0.94;
   }
 
-  #tetherPoints(): [Vector3, Vector3] {
-    return (["blue", "orange"] as const).map((id) => {
-      const robot = this.#robots[id].root;
+  #tetherPoints(): Vector3[] {
+    const points = this.#roster.map((id) => {
+      const robot = this.#robots.get(id)!.root;
       return new Vector3(
         robot.position.x - Math.sin(robot.rotation.y) * 0.76,
         robot.position.y + 0.1,
         robot.position.z - Math.cos(robot.rotation.y) * 0.76,
       );
-    }) as [Vector3, Vector3];
+    });
+    if (points.length > 2) points.push(points[0].clone());
+    return points.length ? points : [Vector3.Zero(), Vector3.Zero()];
   }
 
   #updateTether(tension = 0): void {

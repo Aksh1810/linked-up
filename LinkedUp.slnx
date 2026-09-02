@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LinkedUp.Api.Tests/LinkedUp.Api.Tests.csproj" />
+    <Project Path="backend/LinkedUp.Api/LinkedUp.Api.csproj" />
+  </Folder>
+</Solution>

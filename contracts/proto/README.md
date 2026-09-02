@@ -1,7 +1,9 @@
 # Shared Protocol Buffer contracts
 
-Versioned ASP.NET-to-C++ orchestration contracts will live here when match
-lifecycle is implemented. Gameplay wire contracts will be added only when the
-first browser-to-C++ transport consumes them.
+`linked_up/match/v1` is the import root for the versioned ASP.NET-to-C++ match
+orchestration contract. Field numbers are append-only: never renumber or reuse
+an assigned field number.
 
-No contracts are required by the current headless tether prototype.
+C# generation uses `Grpc.Tools`; C++ generation runs into the CMake build
+output, not this source tree. Do not log, persist, or place a raw
+`PlayerLaunch.ticket` in public room messages.

@@ -1,4 +1,4 @@
-export type PlayerId = "blue" | "orange";
+export type PlayerId = "blue" | "orange" | "green" | "purple";
 
 export interface Vector3State {
   x: number;
@@ -17,6 +17,7 @@ export interface NetworkPlayerState {
 export interface WelcomeMessage {
   type: "welcome";
   player: PlayerId;
+  players: readonly PlayerId[];
   tickRate: number;
   snapshotRate: number;
 }
@@ -25,9 +26,8 @@ export interface ServerSnapshot {
   type: "snapshot";
   tick: number;
   resetCount: number;
-  separation: number;
   tetherTension: number;
-  players: [NetworkPlayerState, NetworkPlayerState];
+  players: readonly NetworkPlayerState[];
 }
 
 export interface ErrorMessage {
@@ -59,7 +59,7 @@ export function encodeInput(input: ClientInput): string {
   });
 }
 
-export function parseServerMessage(message: string): ServerMessage {
+export function parseServerMessage(message: string, expectedRoster?: readonly PlayerId[]): ServerMessage {
   let value: unknown;
   try {
     value = JSON.parse(message);
@@ -69,45 +69,36 @@ export function parseServerMessage(message: string): ServerMessage {
   if (!record(value) || typeof value.type !== "string") invalid();
 
   if (value.type === "welcome") {
-    if (!playerId(value.player) || !count(value.tickRate) || !count(value.snapshotRate)) invalid();
-    return {
-      type: "welcome",
-      player: value.player,
-      tickRate: value.tickRate,
-      snapshotRate: value.snapshotRate,
-    };
+    if (!keys(value, ["type", "player", "players", "tickRate", "snapshotRate"])
+      || !playerId(value.player) || !roster(value.players) || !value.players.includes(value.player)
+      || !count(value.tickRate) || !count(value.snapshotRate)) invalid();
+    return { type: "welcome", player: value.player, players: value.players, tickRate: value.tickRate, snapshotRate: value.snapshotRate };
   }
 
   if (value.type === "error") {
-    if (typeof value.code !== "string" || typeof value.message !== "string") invalid();
+    if (!keys(value, ["type", "code", "message"]) || typeof value.code !== "string" || typeof value.message !== "string") invalid();
     return { type: "error", code: value.code, message: value.message };
   }
 
-  if (value.type !== "snapshot" || !count(value.tick) || !count(value.resetCount) ||
-      !finite(value.separation) || !finite(value.tetherTension) ||
-      !Array.isArray(value.players) || value.players.length !== 2) {
-    invalid();
-  }
-  const blue = parsePlayer(value.players[0], "blue");
-  const orange = parsePlayer(value.players[1], "orange");
+  if (value.type !== "snapshot" || !keys(value, ["type", "tick", "resetCount", "tetherTension", "players"])
+      || !count(value.tick) || !count(value.resetCount) || !finite(value.tetherTension) || !playerStates(value.players)) invalid();
+  const players = value.players.map((player) => parsePlayer(player));
+  if (expectedRoster && !matchesRoster(players, expectedRoster)) invalid();
   return {
     type: "snapshot",
     tick: value.tick,
     resetCount: value.resetCount,
-    separation: value.separation,
     tetherTension: value.tetherTension,
-    players: [blue, orange],
+    players,
   };
 }
 
-function parsePlayer(value: unknown, expected: PlayerId): NetworkPlayerState {
-  if (!record(value) || value.id !== expected || !record(value.position) ||
-      !record(value.velocity) || !count(value.acknowledgedInput) ||
-      typeof value.grounded !== "boolean") {
-    invalid();
-  }
+function parsePlayer(value: unknown): NetworkPlayerState {
+  if (!record(value) || !keys(value, ["id", "acknowledgedInput", "position", "velocity", "grounded"])
+      || !playerId(value.id) || !record(value.position) || !record(value.velocity)
+      || !count(value.acknowledgedInput) || typeof value.grounded !== "boolean") invalid();
   return {
-    id: expected,
+    id: value.id,
     acknowledgedInput: value.acknowledgedInput,
     position: vector(value.position),
     velocity: vector(value.velocity),
@@ -115,13 +106,32 @@ function parsePlayer(value: unknown, expected: PlayerId): NetworkPlayerState {
   };
 }
 
+function roster(value: unknown): value is PlayerId[] {
+  return Array.isArray(value) && value.length >= 2 && value.length <= 4
+    && value.every(playerId) && new Set(value).size === value.length;
+}
+
+function playerStates(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.length >= 2 && value.length <= 4
+    && value.every((player) => record(player) && playerId(player.id))
+    && new Set(value.map((player) => (player as Record<string, unknown>).id)).size === value.length;
+}
+
+function matchesRoster(players: readonly NetworkPlayerState[], roster: readonly PlayerId[]): boolean {
+  return players.length === roster.length && players.every((player, index) => player.id === roster[index]);
+}
+
 function vector(value: Record<string, unknown>): Vector3State {
-  if (!finite(value.x) || !finite(value.y) || !finite(value.z)) invalid();
+  if (!keys(value, ["x", "y", "z"]) || !finite(value.x) || !finite(value.y) || !finite(value.z)) invalid();
   return { x: value.x, y: value.y, z: value.z };
 }
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function keys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  return Reflect.ownKeys(value).length === expected.length && expected.every((key) => Object.hasOwn(value, key));
 }
 
 function finite(value: unknown): value is number {
@@ -133,7 +143,7 @@ function count(value: unknown): value is number {
 }
 
 function playerId(value: unknown): value is PlayerId {
-  return value === "blue" || value === "orange";
+  return value === "blue" || value === "orange" || value === "green" || value === "purple";
 }
 
 function invalid(): never {

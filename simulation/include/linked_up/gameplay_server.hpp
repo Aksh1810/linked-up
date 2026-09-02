@@ -3,11 +3,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace linked_up {
 
 struct GameplayServerConfig {
   std::uint16_t port{9002};
+  std::uint16_t coordination_port{50051};
+  std::string bind_address{"127.0.0.1"};
   std::size_t max_payload_bytes{512};
   std::uint32_t snapshot_every_ticks{3};
 };

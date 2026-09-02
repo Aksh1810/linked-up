@@ -11,7 +11,33 @@
     <title>Linked-Up — Base Camp Prototype</title>
   </head>
   <body>
-    <main id="app">
+    <main id="lobby-shell" hidden>
+      <section id="landing-view" aria-labelledby="landing-title">
+        <p class="eyebrow">Co-op climb</p>
+        <h1 id="landing-title">LINKED—UP</h1>
+        <label for="player-count">Players</label>
+        <select id="player-count">
+          <option value="2">2 players</option>
+          <option value="3">3 players</option>
+          <option value="4">4 players</option>
+        </select>
+        <button id="create-room" type="button">Create Room</button>
+        <p id="landing-status" role="status"></p>
+      </section>
+      <section id="room-view" aria-labelledby="room-title" hidden>
+        <p class="eyebrow">Room <output id="room-code"></output></p>
+        <h2 id="room-title">Your linked crew</h2>
+        <ul id="room-players" aria-live="polite"></ul>
+        <div class="lobby-actions">
+          <button id="copy-invite" type="button">Copy Invite Link</button>
+          <button id="start-room" type="button" hidden>Start Game</button>
+          <button id="leave-room" type="button">Leave Room</button>
+        </div>
+        <p id="lobby-status" role="status"></p>
+      </section>
+    </main>
+
+    <div id="app" hidden>
       <canvas
         id="game-canvas"
         tabindex="0"
@@ -75,7 +101,7 @@
         <code id="server-command" hidden>./build/simulation/linked-up-server</code>
         <a id="return-link" href="./" hidden>Choose another robot</a>
       </div>
-    </main>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

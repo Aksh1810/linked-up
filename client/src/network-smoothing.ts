@@ -82,31 +82,34 @@ export class SnapshotBuffer {
     const newer = this.#entries[newerIndex].snapshot;
     const amount = (renderTick - older.tick) / (newer.tick - older.tick);
     const mix = (left: number, right: number): number => left + (right - left) * amount;
-    const player = (index: 0 | 1): NetworkPlayerState => ({
-      id: newer.players[index].id,
-      acknowledgedInput: newer.players[index].acknowledgedInput,
+    if (!sameRoster(older, newer)) return newer;
+    const player = (newerPlayer: NetworkPlayerState): NetworkPlayerState => {
+      const olderPlayer = older.players.find(({ id }) => id === newerPlayer.id)!;
+      return {
+      id: newerPlayer.id,
+      acknowledgedInput: newerPlayer.acknowledgedInput,
       position: {
-        x: mix(older.players[index].position.x, newer.players[index].position.x),
-        y: mix(older.players[index].position.y, newer.players[index].position.y),
-        z: mix(older.players[index].position.z, newer.players[index].position.z),
+        x: mix(olderPlayer.position.x, newerPlayer.position.x),
+        y: mix(olderPlayer.position.y, newerPlayer.position.y),
+        z: mix(olderPlayer.position.z, newerPlayer.position.z),
       },
       velocity: {
-        x: mix(older.players[index].velocity.x, newer.players[index].velocity.x),
-        y: mix(older.players[index].velocity.y, newer.players[index].velocity.y),
-        z: mix(older.players[index].velocity.z, newer.players[index].velocity.z),
+        x: mix(olderPlayer.velocity.x, newerPlayer.velocity.x),
+        y: mix(olderPlayer.velocity.y, newerPlayer.velocity.y),
+        z: mix(olderPlayer.velocity.z, newerPlayer.velocity.z),
       },
       grounded: amount < 0.5
-        ? older.players[index].grounded
-        : newer.players[index].grounded,
-    });
+        ? olderPlayer.grounded
+        : newerPlayer.grounded,
+      };
+    };
 
     return {
       type: "snapshot",
       tick: renderTick,
       resetCount: newer.resetCount,
-      separation: mix(older.separation, newer.separation),
       tetherTension: mix(older.tetherTension, newer.tetherTension),
-      players: [player(0), player(1)],
+      players: newer.players.map(player),
     };
   }
 
@@ -151,7 +154,8 @@ export class PredictionReconciler {
   }
 
   reconcile(snapshot: ServerSnapshot): void {
-    const authoritative = snapshot.players[this.#player === "blue" ? 0 : 1];
+    const authoritative = snapshot.players.find(({ id }) => id === this.#player);
+    if (!authoritative) return;
     const resetChanged = this.#resetCount !== undefined &&
       snapshot.resetCount !== this.#resetCount;
     this.#resetCount = snapshot.resetCount;
@@ -223,6 +227,11 @@ export class PredictionReconciler {
     );
     this.#predicted = { ...this.#predicted, ...state };
   }
+}
+
+function sameRoster(left: ServerSnapshot, right: ServerSnapshot): boolean {
+  return left.players.length === right.players.length
+    && left.players.every((player, index) => player.id === right.players[index].id);
 }
 
 function clonePlayer(player: NetworkPlayerState): NetworkPlayerState {
