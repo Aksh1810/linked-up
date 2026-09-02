@@ -30,6 +30,7 @@ constexpr JPH::uint kBroadPhaseLayerCount = 2;
 constexpr float kPlayerCapsuleHalfHeight = 0.6f;
 constexpr float kPlayerRadius = 0.4f;
 constexpr float kPlayerStandingHeight = kPlayerCapsuleHalfHeight + kPlayerRadius;
+constexpr float kPi = 3.14159265358979323846f;
 
 #ifdef JPH_ENABLE_ASSERTS
 bool jolt_assert_failed(const char* expression, const char* message, const char* file,
@@ -67,6 +68,12 @@ class ObjectPairs final : public JPH::ObjectLayerPairFilter {
 bool finite(float value) { return std::isfinite(value); }
 
 bool finite(Vec3 value) { return finite(value.x) && finite(value.y) && finite(value.z); }
+
+bool contains(BoxVolume box, Vec3 point) {
+  return std::abs(point.x - box.center.x) <= box.half_extent.x &&
+         std::abs(point.y - box.center.y) <= box.half_extent.y &&
+         std::abs(point.z - box.center.z) <= box.half_extent.z;
+}
 
 JPH::RVec3 to_jolt_position(Vec3 value) { return {value.x, value.y, value.z}; }
 
@@ -110,6 +117,30 @@ Config validated(Config config) {
           config.spawn_positions.begin(), config.spawn_positions.end(),
           [](Vec3 value) { return finite(value); })) {
     throw std::invalid_argument("invalid simulation configuration");
+  }
+  const auto valid_volume = [](BoxVolume box) {
+    return finite(box.center) && finite(box.half_extent) && box.half_extent.x >= 0.0f &&
+           box.half_extent.y >= 0.0f && box.half_extent.z >= 0.0f;
+  };
+  if (!valid_volume(config.summit) || !std::all_of(config.checkpoints.begin(),
+      config.checkpoints.end(), [&](const Checkpoint& checkpoint) {
+        return valid_volume(checkpoint.volume) && std::all_of(
+            checkpoint.spawn_positions.begin(), checkpoint.spawn_positions.end(),
+            [](Vec3 value) { return finite(value); });
+      })) {
+    throw std::invalid_argument("invalid progression configuration");
+  }
+  for (std::size_t index = 0; index < config.obstacles.size(); ++index) {
+    const auto& obstacle = config.obstacles[index];
+    if (obstacle.id.empty() || !finite(obstacle.origin) || !finite(obstacle.half_extent) ||
+        !finite(obstacle.travel) || !finite(obstacle.period_ticks) || !finite(obstacle.amplitude) ||
+        obstacle.half_extent.x <= 0.0f || obstacle.half_extent.y <= 0.0f ||
+        obstacle.half_extent.z <= 0.0f || obstacle.period_ticks <= 0.0f ||
+        obstacle.amplitude < 0.0f ||
+        std::any_of(config.obstacles.begin(), config.obstacles.begin() + static_cast<std::ptrdiff_t>(index),
+                    [&](const ObstacleConfig& previous) { return previous.id == obstacle.id; })) {
+      throw std::invalid_argument("invalid obstacle configuration");
+    }
   }
   return config;
 }
@@ -197,6 +228,7 @@ class PrototypeSimulation::Impl {
   }
 
   void step() {
+    if (match_state_ == MatchState::Finished) return;
     const float delta_time = 1.0f / config_.tick_rate;
     auto& bodies = physics_.GetBodyInterface();
 
@@ -229,6 +261,7 @@ class PrototypeSimulation::Impl {
     }
     enforce_hard_tether_limit();
     ++tick_;
+    ++elapsed_ticks_;
 
     const Snapshot state = snapshot();
     for (const auto& player : state.players) {
@@ -240,6 +273,7 @@ class PrototypeSimulation::Impl {
         return;
       }
     }
+    update_progress(state);
   }
 
   Snapshot snapshot() const {
@@ -247,6 +281,10 @@ class PrototypeSimulation::Impl {
     result.tick = tick_;
     result.reset_count = reset_count_;
     result.tether_tension = tether_tension_;
+    result.elapsed_ticks = elapsed_ticks_;
+    result.checkpoint = checkpoint_;
+    result.match_state = match_state_;
+    result.obstacles = obstacle_states();
     const auto& bodies = physics_.GetBodyInterface();
     result.players.reserve(player_ids_.size());
     for (std::size_t player = 0; player < player_ids_.size(); ++player) {
@@ -261,7 +299,7 @@ class PrototypeSimulation::Impl {
     auto& bodies = physics_.GetBodyInterface();
     for (std::size_t player = 0; player < player_ids_.size(); ++player) {
       bodies.SetPositionRotationAndVelocity(
-          player_ids_[player], to_jolt_position(config_.spawn_positions[player]),
+          player_ids_[player], to_jolt_position(spawn_positions()[player]),
           JPH::Quat::sIdentity(), JPH::Vec3::sZero(), JPH::Vec3::sZero());
       inputs_[player] = {};
       jump_consumed_[player] = false;
@@ -272,6 +310,57 @@ class PrototypeSimulation::Impl {
   }
 
  private:
+  const std::array<Vec3, 4>& spawn_positions() const {
+    return checkpoint_ == 0 ? config_.spawn_positions : config_.checkpoints[checkpoint_ - 1].spawn_positions;
+  }
+
+  void update_progress(const Snapshot& state) {
+    for (std::size_t index = checkpoint_; index < config_.checkpoints.size(); ++index) {
+      const auto& checkpoint = config_.checkpoints[index];
+      if (std::any_of(state.players.begin(), state.players.end(), [&](const PlayerState& player) {
+            return contains(checkpoint.volume, player.position);
+          })) {
+        checkpoint_ = index + 1;
+      } else {
+        break;
+      }
+    }
+    if (std::all_of(state.players.begin(), state.players.end(), [&](const PlayerState& player) {
+          return contains(config_.summit, player.position);
+        })) {
+      match_state_ = MatchState::Finished;
+    }
+  }
+
+  std::vector<DynamicObstacleState> obstacle_states() const {
+    std::vector<DynamicObstacleState> states;
+    states.reserve(config_.obstacles.size());
+    for (const auto& obstacle : config_.obstacles) {
+      const float cycle = std::fmod(static_cast<float>(elapsed_ticks_) / obstacle.period_ticks, 1.0f);
+      DynamicObstacleState state{.id = obstacle.id, .kind = obstacle.kind, .position = obstacle.origin};
+      switch (obstacle.kind) {
+        case ObstacleKind::MovingPlatform:
+          state.position = {obstacle.origin.x + obstacle.travel.x * cycle,
+                            obstacle.origin.y + obstacle.travel.y * cycle,
+                            obstacle.origin.z + obstacle.travel.z * cycle};
+          break;
+        case ObstacleKind::RotatingBeam:
+          state.rotation.y = 2.0f * kPi * cycle;
+          break;
+        case ObstacleKind::SwingingBeam:
+          state.position.x += std::sin(2.0f * kPi * cycle) * obstacle.amplitude;
+          state.rotation.z = std::sin(2.0f * kPi * cycle) * obstacle.amplitude;
+          break;
+        case ObstacleKind::Fan:
+        case ObstacleKind::Conveyor:
+        case ObstacleKind::FallingPlatform:
+          break;
+      }
+      states.push_back(std::move(state));
+    }
+    return states;
+  }
+
   std::size_t player_index(RobotColor player) const {
     const auto found = std::find(roster_.begin(), roster_.end(), player);
     if (found == roster_.end()) throw std::invalid_argument("player is not in the roster");
@@ -374,6 +463,9 @@ class PrototypeSimulation::Impl {
   std::vector<bool> jump_consumed_;
   std::uint64_t tick_{};
   std::uint64_t reset_count_{};
+  std::uint64_t elapsed_ticks_{};
+  std::size_t checkpoint_{};
+  MatchState match_state_{MatchState::Running};
   float tether_tension_{};
 };
 

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace linked_up {
@@ -18,6 +19,37 @@ struct Vec3 {
   float x{};
   float y{};
   float z{};
+};
+
+struct BoxVolume {
+  Vec3 center;
+  Vec3 half_extent;
+};
+
+struct Checkpoint {
+  BoxVolume volume;
+  std::array<Vec3, 4> spawn_positions;
+};
+
+enum class MatchState { Running, Finished };
+
+enum class ObstacleKind { MovingPlatform, RotatingBeam, SwingingBeam, Fan, Conveyor, FallingPlatform };
+
+struct ObstacleConfig {
+  std::string id;
+  ObstacleKind kind{};
+  Vec3 origin;
+  Vec3 half_extent;
+  Vec3 travel;
+  float period_ticks{60.0f};
+  float amplitude{};
+};
+
+struct DynamicObstacleState {
+  std::string id;
+  ObstacleKind kind{};
+  Vec3 position;
+  Vec3 rotation;
 };
 
 struct PlayerInput {
@@ -38,6 +70,10 @@ struct Snapshot {
   std::vector<PlayerState> players;
   float tether_tension{};
   std::uint64_t reset_count{};
+  std::uint64_t elapsed_ticks{};
+  std::size_t checkpoint{};
+  MatchState match_state{MatchState::Running};
+  std::vector<DynamicObstacleState> obstacles;
 };
 
 struct Config {
@@ -54,6 +90,9 @@ struct Config {
   float tether_damping{8.0f};
   float tether_max_force{120.0f};
   float fail_height{-12.0f};
+  std::vector<Checkpoint> checkpoints;
+  BoxVolume summit{{0.0f, 1000.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+  std::vector<ObstacleConfig> obstacles;
 };
 
 class PrototypeSimulation {

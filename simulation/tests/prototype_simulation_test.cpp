@@ -10,6 +10,11 @@
 namespace {
 
 using linked_up::Config;
+using linked_up::BoxVolume;
+using linked_up::Checkpoint;
+using linked_up::MatchState;
+using linked_up::ObstacleConfig;
+using linked_up::ObstacleKind;
 using linked_up::PlayerInput;
 using linked_up::RobotColor;
 using linked_up::PrototypeSimulation;
@@ -171,6 +176,40 @@ void invalid_rosters_are_rejected() {
   }
 }
 
+void checkpoint_and_summit_are_authoritative_team_progress() {
+  Config config;
+  config.checkpoints = {{
+      .volume = {{0.0f, 1.5f, 0.0f}, {5.0f, 1.0f, 5.0f}},
+      .spawn_positions = config.spawn_positions,
+  }};
+  config.summit = {{0.0f, 1.5f, 0.0f}, {5.0f, 1.0f, 5.0f}};
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+
+  simulation.step();
+  const auto completed = simulation.snapshot();
+  assert(completed.checkpoint == 1);
+  assert(completed.match_state == MatchState::Finished);
+  assert(completed.elapsed_ticks == 1);
+  simulation.step();
+  assert(simulation.snapshot().elapsed_ticks == completed.elapsed_ticks);
+}
+
+void dynamic_obstacles_follow_deterministic_paths() {
+  Config config;
+  config.obstacles = {
+      {"lift-1", ObstacleKind::MovingPlatform, {0.0f, 1.0f, 0.0f}, {1.0f, 0.2f, 1.0f},
+       {0.0f, 4.0f, 0.0f}, 120.0f, 0.0f},
+      {"beam-1", ObstacleKind::RotatingBeam, {3.0f, 1.0f, 0.0f}, {2.0f, 0.2f, 0.2f},
+       {}, 120.0f, 0.0f},
+  };
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  for (int tick = 0; tick < 30; ++tick) simulation.step();
+  const auto state = simulation.snapshot();
+  assert(state.obstacles.size() == 2);
+  assert(std::abs(state.obstacles[0].position.y - 2.0f) < 0.05f);
+  assert(std::abs(state.obstacles[1].rotation.y - 1.570796f) < 0.05f);
+}
+
 }  // namespace
 
 int main() {
@@ -182,5 +221,7 @@ int main() {
   three_and_four_player_rosters_are_authoritative();
   group_tether_pulls_an_outlier_toward_its_teammates();
   invalid_rosters_are_rejected();
+  checkpoint_and_summit_are_authoritative_team_progress();
+  dynamic_obstacles_follow_deterministic_paths();
   std::cout << "authoritative tether checks passed\n";
 }
