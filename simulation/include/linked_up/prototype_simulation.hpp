@@ -34,6 +34,7 @@ struct Checkpoint {
 enum class MatchState { Running, Finished };
 
 enum class ObstacleKind { MovingPlatform, RotatingBeam, SwingingBeam, Fan, Conveyor, FallingPlatform };
+enum class ObstaclePhase { Armed, Warning, Falling };
 
 struct ObstacleConfig {
   std::string id;
@@ -50,6 +51,7 @@ struct DynamicObstacleState {
   ObstacleKind kind{};
   Vec3 position;
   Vec3 rotation;
+  ObstaclePhase phase{ObstaclePhase::Armed};
 };
 
 struct PlayerInput {

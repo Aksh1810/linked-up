@@ -15,6 +15,7 @@ using linked_up::Checkpoint;
 using linked_up::MatchState;
 using linked_up::ObstacleConfig;
 using linked_up::ObstacleKind;
+using linked_up::ObstaclePhase;
 using linked_up::PlayerInput;
 using linked_up::RobotColor;
 using linked_up::PrototypeSimulation;
@@ -223,6 +224,25 @@ void fan_force_is_authoritative_and_volume_bound() {
   assert(state.players[1].velocity.z > 0.1f);
 }
 
+void falling_platform_warns_falls_and_resets() {
+  Config config;
+  config.obstacles = {
+      {"fall-1", ObstacleKind::FallingPlatform, {0.0f, 1.5f, 0.0f}, {5.0f, 2.0f, 5.0f},
+       {}, 3.0f, 6.0f},
+  };
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.step();
+  assert(simulation.snapshot().obstacles[0].phase == ObstaclePhase::Warning);
+  for (int tick = 0; tick < 4; ++tick) simulation.step();
+  const auto falling = simulation.snapshot().obstacles[0];
+  assert(falling.phase == ObstaclePhase::Falling);
+  assert(falling.position.y < config.obstacles[0].origin.y);
+  simulation.reset();
+  const auto reset = simulation.snapshot().obstacles[0];
+  assert(reset.phase == ObstaclePhase::Armed);
+  assert(std::abs(reset.position.y - config.obstacles[0].origin.y) < 0.001f);
+}
+
 }  // namespace
 
 int main() {
@@ -237,5 +257,6 @@ int main() {
   checkpoint_and_summit_are_authoritative_team_progress();
   dynamic_obstacles_follow_deterministic_paths();
   fan_force_is_authoritative_and_volume_bound();
+  falling_platform_warns_falls_and_resets();
   std::cout << "authoritative tether checks passed\n";
 }

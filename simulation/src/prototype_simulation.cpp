@@ -167,6 +167,7 @@ class PrototypeSimulation::Impl {
   explicit Impl(std::vector<RobotColor> roster, Config config)
       : roster_(std::move(roster)), config_(validated(config)) {
     validate_roster(roster_);
+    falling_started_ticks_.resize(config_.obstacles.size());
     JPH::RegisterDefaultAllocator();
     JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = jolt_assert_failed;)
     JPH::Factory::sInstance = new JPH::Factory();
@@ -205,7 +206,7 @@ class PrototypeSimulation::Impl {
     obstacle_ids_.reserve(config_.obstacles.size());
     for (const auto& obstacle : config_.obstacles) {
       if (obstacle.kind != ObstacleKind::MovingPlatform && obstacle.kind != ObstacleKind::RotatingBeam &&
-          obstacle.kind != ObstacleKind::SwingingBeam) {
+          obstacle.kind != ObstacleKind::SwingingBeam && obstacle.kind != ObstacleKind::FallingPlatform) {
         obstacle_ids_.push_back(std::nullopt);
         continue;
       }
@@ -275,6 +276,7 @@ class PrototypeSimulation::Impl {
 
     apply_tether();
     apply_environment_forces();
+    update_falling_platforms();
     update_kinematic_obstacles(delta_time);
     const auto errors = physics_.Update(delta_time, 1, allocator_.get(), jobs_.get());
     if (errors != JPH::EPhysicsUpdateError::None) {
@@ -328,6 +330,7 @@ class PrototypeSimulation::Impl {
     }
     tick_ = 0;
     tether_tension_ = 0.0f;
+    std::fill(falling_started_ticks_.begin(), falling_started_ticks_.end(), std::nullopt);
     ++reset_count_;
   }
 
@@ -375,12 +378,39 @@ class PrototypeSimulation::Impl {
           break;
         case ObstacleKind::Fan:
         case ObstacleKind::Conveyor:
+          break;
         case ObstacleKind::FallingPlatform:
+          if (falling_started_ticks_[states.size()]) {
+            const auto started = *falling_started_ticks_[states.size()];
+            const auto elapsed = elapsed_ticks_ - started;
+            state.phase = elapsed < static_cast<std::uint64_t>(obstacle.period_ticks)
+                ? ObstaclePhase::Warning
+                : ObstaclePhase::Falling;
+            if (state.phase == ObstaclePhase::Falling) {
+              state.position.y -= obstacle.amplitude *
+                  static_cast<float>(elapsed - static_cast<std::uint64_t>(obstacle.period_ticks)) /
+                  config_.tick_rate;
+            }
+          }
           break;
       }
       states.push_back(std::move(state));
     }
     return states;
+  }
+
+  void update_falling_platforms() {
+    const auto& bodies = physics_.GetBodyInterface();
+    for (std::size_t index = 0; index < config_.obstacles.size(); ++index) {
+      const auto& obstacle = config_.obstacles[index];
+      if (obstacle.kind != ObstacleKind::FallingPlatform || falling_started_ticks_[index]) continue;
+      const BoxVolume volume{obstacle.origin, obstacle.half_extent};
+      if (std::any_of(player_ids_.begin(), player_ids_.end(), [&](const JPH::BodyID& body) {
+            return contains(volume, from_jolt(bodies.GetPosition(body)));
+          })) {
+        falling_started_ticks_[index] = elapsed_ticks_;
+      }
+    }
   }
 
   void update_kinematic_obstacles(float delta_time) {
@@ -519,6 +549,7 @@ class PrototypeSimulation::Impl {
   JPH::BodyID floor_id_;
   std::vector<JPH::BodyID> player_ids_;
   std::vector<std::optional<JPH::BodyID>> obstacle_ids_;
+  std::vector<std::optional<std::uint64_t>> falling_started_ticks_;
   std::vector<PlayerInput> inputs_;
   std::vector<bool> jump_consumed_;
   std::uint64_t tick_{};
