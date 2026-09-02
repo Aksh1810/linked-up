@@ -210,6 +210,19 @@ void dynamic_obstacles_follow_deterministic_paths() {
   assert(std::abs(state.obstacles[1].rotation.y - 1.570796f) < 0.05f);
 }
 
+void fan_force_is_authoritative_and_volume_bound() {
+  Config config;
+  config.obstacles = {
+      {"fan-1", ObstacleKind::Fan, {0.0f, 1.5f, 0.0f}, {5.0f, 2.0f, 5.0f},
+       {0.0f, 0.0f, 1.0f}, 60.0f, 30.0f},
+  };
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  for (int tick = 0; tick < 30; ++tick) simulation.step();
+  const auto state = simulation.snapshot();
+  assert(state.players[0].velocity.z > 0.1f);
+  assert(state.players[1].velocity.z > 0.1f);
+}
+
 }  // namespace
 
 int main() {
@@ -223,5 +236,6 @@ int main() {
   invalid_rosters_are_rejected();
   checkpoint_and_summit_are_authoritative_team_progress();
   dynamic_obstacles_follow_deterministic_paths();
+  fan_force_is_authoritative_and_volume_bound();
   std::cout << "authoritative tether checks passed\n";
 }

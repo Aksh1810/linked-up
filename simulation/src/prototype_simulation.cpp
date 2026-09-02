@@ -16,6 +16,7 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 
@@ -201,6 +202,20 @@ class PrototypeSimulation::Impl {
       settings.mMassPropertiesOverride.mMass = 1.0f;
       player_ids_.push_back(bodies.CreateAndAddBody(settings, JPH::EActivation::Activate));
     }
+    obstacle_ids_.reserve(config_.obstacles.size());
+    for (const auto& obstacle : config_.obstacles) {
+      if (obstacle.kind != ObstacleKind::MovingPlatform && obstacle.kind != ObstacleKind::RotatingBeam &&
+          obstacle.kind != ObstacleKind::SwingingBeam) {
+        obstacle_ids_.push_back(std::nullopt);
+        continue;
+      }
+      JPH::BodyCreationSettings settings(
+          new JPH::BoxShape({obstacle.half_extent.x, obstacle.half_extent.y, obstacle.half_extent.z}),
+          to_jolt_position(obstacle.origin), JPH::Quat::sIdentity(), JPH::EMotionType::Kinematic,
+          kMovingLayer);
+      settings.mFriction = 0.8f;
+      obstacle_ids_.push_back(bodies.CreateAndAddBody(settings, JPH::EActivation::Activate));
+    }
     physics_.OptimizeBroadPhase();
   }
 
@@ -209,6 +224,11 @@ class PrototypeSimulation::Impl {
     for (const auto body : player_ids_) {
       bodies.RemoveBody(body);
       bodies.DestroyBody(body);
+    }
+    for (const auto body : obstacle_ids_) {
+      if (!body) continue;
+      bodies.RemoveBody(*body);
+      bodies.DestroyBody(*body);
     }
     bodies.RemoveBody(floor_id_);
     bodies.DestroyBody(floor_id_);
@@ -254,6 +274,8 @@ class PrototypeSimulation::Impl {
     }
 
     apply_tether();
+    apply_environment_forces();
+    update_kinematic_obstacles(delta_time);
     const auto errors = physics_.Update(delta_time, 1, allocator_.get(), jobs_.get());
     if (errors != JPH::EPhysicsUpdateError::None) {
       throw std::runtime_error("Jolt physics update failed with flags " +
@@ -361,6 +383,43 @@ class PrototypeSimulation::Impl {
     return states;
   }
 
+  void update_kinematic_obstacles(float delta_time) {
+    const auto states = obstacle_states();
+    auto& bodies = physics_.GetBodyInterface();
+    for (std::size_t index = 0; index < states.size(); ++index) {
+      if (!obstacle_ids_[index]) continue;
+      const auto& state = states[index];
+      const auto rotation = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), state.rotation.y);
+      bodies.MoveKinematic(*obstacle_ids_[index], to_jolt_position(state.position), rotation, delta_time);
+    }
+  }
+
+  void apply_environment_forces() {
+    auto& bodies = physics_.GetBodyInterface();
+    for (const auto& obstacle : config_.obstacles) {
+      if (obstacle.kind != ObstacleKind::Fan && obstacle.kind != ObstacleKind::Conveyor) continue;
+      const float direction_length = std::hypot(obstacle.travel.x, obstacle.travel.z);
+      if (direction_length < 0.0001f || obstacle.amplitude == 0.0f) continue;
+      const Vec3 direction{obstacle.travel.x / direction_length, 0.0f,
+                           obstacle.travel.z / direction_length};
+      const BoxVolume volume{obstacle.origin, obstacle.half_extent};
+      for (std::size_t player = 0; player < player_ids_.size(); ++player) {
+        if (!contains(volume, from_jolt(bodies.GetPosition(player_ids_[player])))) continue;
+        if (obstacle.kind == ObstacleKind::Fan) {
+          bodies.AddForce(player_ids_[player], {direction.x * obstacle.amplitude, 0.0f,
+                                                direction.z * obstacle.amplitude});
+        } else if (is_grounded(player)) {
+          const auto velocity = bodies.GetLinearVelocity(player_ids_[player]);
+          bodies.SetLinearVelocity(player_ids_[player],
+                                   {velocity.GetX() + direction.x * obstacle.amplitude /
+                                                          config_.tick_rate,
+                                    velocity.GetY(), velocity.GetZ() + direction.z * obstacle.amplitude /
+                                                          config_.tick_rate});
+        }
+      }
+    }
+  }
+
   std::size_t player_index(RobotColor player) const {
     const auto found = std::find(roster_.begin(), roster_.end(), player);
     if (found == roster_.end()) throw std::invalid_argument("player is not in the roster");
@@ -459,6 +518,7 @@ class PrototypeSimulation::Impl {
   std::unique_ptr<JPH::JobSystemThreadPool> jobs_;
   JPH::BodyID floor_id_;
   std::vector<JPH::BodyID> player_ids_;
+  std::vector<std::optional<JPH::BodyID>> obstacle_ids_;
   std::vector<PlayerInput> inputs_;
   std::vector<bool> jump_consumed_;
   std::uint64_t tick_{};
