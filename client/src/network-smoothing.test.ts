@@ -14,6 +14,10 @@ function snapshotAt(tick: number, orangeX: number, resetCount = 0): ServerSnapsh
     tick,
     resetCount,
     tetherTension: orangeX / 10,
+    matchState: "running",
+    elapsedTicks: tick,
+    checkpoint: 0,
+    obstacles: [],
     players: [
       {
         id: "blue",
@@ -71,6 +75,7 @@ test("snapshot interpolation keeps each dynamic player matched by ID", () => {
   const buffer = new SnapshotBuffer({ ...defaultSmoothingConfig, interpolationDelayTicks: 6 });
   const dynamic = (tick: number, greenX: number): ServerSnapshot => ({
     type: "snapshot", tick, resetCount: 0, tetherTension: 0,
+    matchState: "running", elapsedTicks: tick, checkpoint: 0, obstacles: [],
     players: [
       ...snapshotAt(tick, 0).players,
       {

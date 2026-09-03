@@ -17,6 +17,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { GameplayConnection, type GameplayConnectionIdentity } from "./gameplay-connection";
 import type {
   ClientInput,
+  NetworkObstacleState,
   NetworkPlayerState,
   PlayerId,
   ServerSnapshot,
@@ -53,6 +54,7 @@ export class Game {
   readonly #camera: ArcRotateCamera;
   readonly #input = new InputController();
   readonly #robots = new Map<PlayerId, RobotVisual>();
+  readonly #obstacles = new Map<string, Mesh>();
   readonly #tether: LinesMesh;
   readonly #connection: GameplayConnection;
   readonly #options: GameOptions;
@@ -71,6 +73,7 @@ export class Game {
   #inputElapsed = 0;
   #welcomed = false;
   #ready = false;
+  #completed = false;
 
   static async create(canvas: HTMLCanvasElement, options: GameOptions): Promise<Game> {
     const engine = await EngineFactory.CreateAsync(canvas, {
@@ -316,10 +319,15 @@ export class Game {
         Vector3.Lerp(this.#camera.target, target, 1 - Math.exp(-8 * delta)),
       );
       this.#updateTether(sampled?.tetherTension ?? this.#snapshot.tetherTension);
+      this.#updateObstacles(sampled?.obstacles ?? this.#snapshot.obstacles);
+      if (this.#snapshot.matchState === "finished" && !this.#completed) {
+        this.#completed = true;
+        this.#options.onStatus(`Summit reached in ${(this.#snapshot.elapsedTicks / this.#tickRate).toFixed(1)}s`);
+      }
     }
 
-    if (this.#tickRate) this.#inputElapsed += delta;
-    if (this.#tickRate && this.#inputElapsed >= 1 / this.#tickRate) {
+    if (!this.#completed && this.#tickRate) this.#inputElapsed += delta;
+    if (!this.#completed && this.#tickRate && this.#inputElapsed >= 1 / this.#tickRate) {
       this.#inputElapsed %= 1 / this.#tickRate;
       const input = this.#input.consume();
       const movement = cameraRelativeMovement(input, this.#camera.alpha);
@@ -343,6 +351,24 @@ export class Game {
       if (!this.#robots.has(player)) this.#robots.set(player, this.#createRobot(player));
       if (!this.#headings.has(player)) this.#headings.set(player, 0);
       if (!this.#animationTimes.has(player)) this.#animationTimes.set(player, 0);
+    }
+  }
+
+  #updateObstacles(obstacles: readonly NetworkObstacleState[]): void {
+    for (const state of obstacles) {
+      let mesh = this.#obstacles.get(state.id);
+      if (!mesh) {
+        mesh = MeshBuilder.CreateBox(`obstacle-${state.id}`, { width: 2, height: 0.35, depth: 2 }, this.#scene);
+        const colors: Record<NetworkObstacleState["kind"], string> = {
+          movingPlatform: "#f6c56f", rotatingBeam: "#e97552", swingingBeam: "#db7698",
+          fan: "#7ee7ef", conveyor: "#757d95", fallingPlatform: "#af8d68",
+        };
+        mesh.material = this.#material(`obstacle-${state.id}-material`, colors[state.kind]);
+        this.#obstacles.set(state.id, mesh);
+      }
+      mesh.position.set(state.position.x, state.position.y, state.position.z);
+      mesh.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
+      mesh.isVisible = state.phase !== "falling" || state.position.y > -12;
     }
   }
 
