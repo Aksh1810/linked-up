@@ -1,5 +1,6 @@
 #include "linked_up/prototype_simulation.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -60,6 +61,20 @@ void movement_and_jump_are_authoritative() {
 
   simulation.set_input(RobotColor::Blue, {1.0f, 0.0f, true});
   simulation.step();
+  assert(simulation.snapshot().players[0].velocity.y > 1.0f);
+}
+
+void jumping_from_an_elevated_platform_is_authoritative() {
+  Config config;
+  config.obstacles = {
+      {"ledge", ObstacleKind::StaticPlatform, {0.0f, 3.0f, 0.0f}, {4.0f, 0.4f, 4.0f}, {}, 60.0f, 0.0f},
+  };
+  config.spawn_positions = {{{-1.0f, 4.4f, 0.0f}, {1.0f, 4.4f, 0.0f}}};
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+
+  simulation.set_input(RobotColor::Blue, {0.0f, 0.0f, true});
+  simulation.step();
+
   assert(simulation.snapshot().players[0].velocity.y > 1.0f);
 }
 
@@ -250,10 +265,30 @@ void normal_matches_receive_a_blockout_route() {
   assert(state.obstacles[0].kind == ObstacleKind::StaticPlatform);
 }
 
+void default_route_opening_ledge_fits_a_single_jump() {
+  const Config config = linked_up::default_route_config();
+  const auto ledge = std::find_if(config.obstacles.begin(), config.obstacles.end(), [](const ObstacleConfig& obstacle) {
+    return obstacle.id == "ledge-1";
+  });
+  assert(ledge != config.obstacles.end());
+  PrototypeSimulation simulation;
+  for (int tick = 0; tick < 90; ++tick) simulation.step();
+
+  simulation.set_input(RobotColor::Blue, {0.0f, 0.0f, true});
+  float apex = 0.0f;
+  for (int tick = 0; tick < 90; ++tick) {
+    simulation.step();
+    apex = std::max(apex, simulation.snapshot().players[0].position.y);
+  }
+
+  assert(apex >= ledge->origin.y + ledge->half_extent.y + 1.1f);
+}
+
 }  // namespace
 
 int main() {
   movement_and_jump_are_authoritative();
+  jumping_from_an_elevated_platform_is_authoritative();
   two_player_tether_hard_limit_is_authoritative();
   falling_player_pulls_teammate();
   malformed_input_is_neutral();
@@ -266,5 +301,6 @@ int main() {
   fan_force_is_authoritative_and_volume_bound();
   falling_platform_warns_falls_and_resets();
   normal_matches_receive_a_blockout_route();
+  default_route_opening_ledge_fits_a_single_jump();
   std::cout << "authoritative tether checks passed\n";
 }

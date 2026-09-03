@@ -172,7 +172,7 @@ Config default_route_config() {
   }};
   config.summit = {{0.0f, 9.0f, 18.0f}, {4.0f, 2.0f, 3.0f}};
   config.obstacles = {
-      {"ledge-1", ObstacleKind::StaticPlatform, {0.0f, 3.0f, 5.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
+      {"ledge-1", ObstacleKind::StaticPlatform, {0.0f, 1.8f, 5.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
       {"lift-1", ObstacleKind::MovingPlatform, {0.0f, 4.5f, 9.0f}, {2.0f, 0.3f, 2.0f}, {0.0f, 2.0f, 0.0f}, 180.0f, 0.0f},
       {"ledge-2", ObstacleKind::StaticPlatform, {0.0f, 7.0f, 14.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
       {"beam-1", ObstacleKind::RotatingBeam, {0.0f, 7.8f, 14.0f}, {3.5f, 0.2f, 0.2f}, {}, 180.0f, 0.0f},
@@ -491,10 +491,23 @@ class PrototypeSimulation::Impl {
     const auto& bodies = physics_.GetBodyInterface();
     const auto position = bodies.GetPosition(player_ids_[player]);
     const auto velocity = bodies.GetLinearVelocity(player_ids_[player]);
-    return position.GetY() <= kPlayerStandingHeight + 0.08f &&
-           std::abs(position.GetX()) <= config_.platform_half_extent + kPlayerRadius &&
-           std::abs(position.GetZ()) <= config_.platform_half_extent + kPlayerRadius &&
-           velocity.GetY() <= 0.2f;
+    if (velocity.GetY() > 0.2f) return false;
+    if (position.GetY() <= kPlayerStandingHeight + 0.08f &&
+        std::abs(position.GetX()) <= config_.platform_half_extent + kPlayerRadius &&
+        std::abs(position.GetZ()) <= config_.platform_half_extent + kPlayerRadius) {
+      return true;
+    }
+    for (std::size_t index = 0; index < obstacle_ids_.size(); ++index) {
+      const auto& obstacle = config_.obstacles[index];
+      if (!obstacle_ids_[index] || (obstacle.kind != ObstacleKind::StaticPlatform &&
+                                   obstacle.kind != ObstacleKind::MovingPlatform &&
+                                   obstacle.kind != ObstacleKind::FallingPlatform)) continue;
+      const auto platform = bodies.GetPosition(*obstacle_ids_[index]);
+      if (std::abs(position.GetY() - (platform.GetY() + obstacle.half_extent.y + kPlayerStandingHeight)) <= 0.08f &&
+          std::abs(position.GetX() - platform.GetX()) <= obstacle.half_extent.x + kPlayerRadius &&
+          std::abs(position.GetZ() - platform.GetZ()) <= obstacle.half_extent.z + kPlayerRadius) return true;
+    }
+    return false;
   }
 
   void apply_tether() {
