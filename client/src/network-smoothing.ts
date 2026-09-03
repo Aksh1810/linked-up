@@ -82,7 +82,7 @@ export class SnapshotBuffer {
     const newer = this.#entries[newerIndex].snapshot;
     const amount = (renderTick - older.tick) / (newer.tick - older.tick);
     const mix = (left: number, right: number): number => left + (right - left) * amount;
-    if (!sameRoster(older, newer)) return newer;
+    if (!sameRoster(older, newer) || !sameObstacles(older, newer)) return newer;
     const player = (newerPlayer: NetworkPlayerState): NetworkPlayerState => {
       const olderPlayer = older.players.find(({ id }) => id === newerPlayer.id)!;
       return {
@@ -110,12 +110,37 @@ export class SnapshotBuffer {
       resetCount: newer.resetCount,
       tetherTension: mix(older.tetherTension, newer.tetherTension),
       players: newer.players.map(player),
+      matchState: newer.matchState,
+      elapsedTicks: newer.elapsedTicks,
+      checkpoint: newer.checkpoint,
+      obstacles: newer.obstacles.map((newerObstacle) => {
+        const olderObstacle = older.obstacles.find(({ id }) => id === newerObstacle.id)!;
+        return {
+          ...newerObstacle,
+          position: {
+            x: mix(olderObstacle.position.x, newerObstacle.position.x),
+            y: mix(olderObstacle.position.y, newerObstacle.position.y),
+            z: mix(olderObstacle.position.z, newerObstacle.position.z),
+          },
+          rotation: {
+            x: mix(olderObstacle.rotation.x, newerObstacle.rotation.x),
+            y: mix(olderObstacle.rotation.y, newerObstacle.rotation.y),
+            z: mix(olderObstacle.rotation.z, newerObstacle.rotation.z),
+          },
+        };
+      }),
     };
   }
 
   get latest(): ServerSnapshot | undefined {
     return this.#entries.at(-1)?.snapshot;
   }
+}
+
+function sameObstacles(left: ServerSnapshot, right: ServerSnapshot): boolean {
+  return left.obstacles.length === right.obstacles.length && left.obstacles.every(
+    (obstacle, index) => obstacle.id === right.obstacles[index].id && obstacle.kind === right.obstacles[index].kind,
+  );
 }
 
 export class PredictionReconciler {

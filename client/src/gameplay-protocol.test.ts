@@ -32,6 +32,8 @@ const purple = {
   grounded: true,
 };
 
+const world = { matchState: "running", elapsedTicks: 8, checkpoint: 0, obstacles: [] };
+
 test("input encoding preserves the wire contract", () => {
   assert.equal(
     encodeInput({ sequence: 4, clientTick: 9, moveX: 0.5, moveZ: -1, jump: true }),
@@ -52,6 +54,7 @@ test("welcome, snapshot, and error messages are validated", () => {
     resetCount: 0,
     tetherTension: 0,
     players: [blue, orange],
+    ...world,
   }));
   assert.equal(snapshot.type, "snapshot");
   assert.equal(snapshot.players[0].acknowledgedInput, 12);
@@ -68,6 +71,7 @@ test("authoritative snapshots accept a unique two-to-four player roster", () => 
   const snapshot = parseServerMessage(JSON.stringify({
     type: "snapshot", tick: 8, resetCount: 0, tetherTension: 0.2,
     players: [blue, orange, green, purple],
+    ...world,
   }));
   assert.equal(snapshot.type, "snapshot");
   assert.equal(snapshot.players.length, 4);

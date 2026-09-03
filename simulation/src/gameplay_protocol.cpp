@@ -69,6 +69,31 @@ void write_vector(crow::json::wvalue& target, Vec3 value) {
   target["z"] = value.z;
 }
 
+const char* match_state_name(MatchState state) {
+  return state == MatchState::Finished ? "finished" : "running";
+}
+
+const char* obstacle_kind_name(ObstacleKind kind) {
+  switch (kind) {
+    case ObstacleKind::MovingPlatform: return "movingPlatform";
+    case ObstacleKind::RotatingBeam: return "rotatingBeam";
+    case ObstacleKind::SwingingBeam: return "swingingBeam";
+    case ObstacleKind::Fan: return "fan";
+    case ObstacleKind::Conveyor: return "conveyor";
+    case ObstacleKind::FallingPlatform: return "fallingPlatform";
+  }
+  throw std::invalid_argument("unknown obstacle kind");
+}
+
+const char* obstacle_phase_name(ObstaclePhase phase) {
+  switch (phase) {
+    case ObstaclePhase::Armed: return "armed";
+    case ObstaclePhase::Warning: return "warning";
+    case ObstaclePhase::Falling: return "falling";
+  }
+  throw std::invalid_argument("unknown obstacle phase");
+}
+
 }  // namespace
 
 InputResult InputGate::accept(std::string_view message, Clock::time_point now) {
@@ -146,6 +171,19 @@ std::string serialize_snapshot(
   message["tick"] = snapshot.tick;
   message["resetCount"] = snapshot.reset_count;
   message["tetherTension"] = snapshot.tether_tension;
+  message["matchState"] = match_state_name(snapshot.match_state);
+  message["elapsedTicks"] = snapshot.elapsed_ticks;
+  message["checkpoint"] = snapshot.checkpoint;
+
+  for (std::size_t index = 0; index < snapshot.obstacles.size(); ++index) {
+    const auto& source = snapshot.obstacles[index];
+    auto& obstacle = message["obstacles"][index];
+    obstacle["id"] = source.id;
+    obstacle["kind"] = obstacle_kind_name(source.kind);
+    obstacle["phase"] = obstacle_phase_name(source.phase);
+    write_vector(obstacle["position"], source.position);
+    write_vector(obstacle["rotation"], source.rotation);
+  }
 
   for (std::size_t index = 0; index < snapshot.players.size(); ++index) {
     auto& player = message["players"][index];

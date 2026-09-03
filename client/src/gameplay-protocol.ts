@@ -28,6 +28,18 @@ export interface ServerSnapshot {
   resetCount: number;
   tetherTension: number;
   players: readonly NetworkPlayerState[];
+  matchState: "running" | "finished";
+  elapsedTicks: number;
+  checkpoint: number;
+  obstacles: readonly NetworkObstacleState[];
+}
+
+export interface NetworkObstacleState {
+  id: string;
+  kind: "movingPlatform" | "rotatingBeam" | "swingingBeam" | "fan" | "conveyor" | "fallingPlatform";
+  phase: "armed" | "warning" | "falling";
+  position: Vector3State;
+  rotation: Vector3State;
 }
 
 export interface ErrorMessage {
@@ -80,8 +92,9 @@ export function parseServerMessage(message: string, expectedRoster?: readonly Pl
     return { type: "error", code: value.code, message: value.message };
   }
 
-  if (value.type !== "snapshot" || !keys(value, ["type", "tick", "resetCount", "tetherTension", "players"])
-      || !count(value.tick) || !count(value.resetCount) || !finite(value.tetherTension) || !playerStates(value.players)) invalid();
+  if (value.type !== "snapshot" || !keys(value, ["type", "tick", "resetCount", "tetherTension", "players", "matchState", "elapsedTicks", "checkpoint", "obstacles"])
+      || !count(value.tick) || !count(value.resetCount) || !finite(value.tetherTension) || !playerStates(value.players)
+      || !matchState(value.matchState) || !count(value.elapsedTicks) || !count(value.checkpoint) || !obstacles(value.obstacles)) invalid();
   const players = value.players.map((player) => parsePlayer(player));
   if (expectedRoster && !matchesRoster(players, expectedRoster)) invalid();
   return {
@@ -90,7 +103,36 @@ export function parseServerMessage(message: string, expectedRoster?: readonly Pl
     resetCount: value.resetCount,
     tetherTension: value.tetherTension,
     players,
+    matchState: value.matchState,
+    elapsedTicks: value.elapsedTicks,
+    checkpoint: value.checkpoint,
+    obstacles: value.obstacles.map(parseObstacle),
   };
+}
+
+function matchState(value: unknown): value is "running" | "finished" {
+  return value === "running" || value === "finished";
+}
+
+function obstacles(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.every((obstacle) => record(obstacle) && typeof obstacle.id === "string"
+    && obstacle.id.length > 0) && new Set(value.map((obstacle) => (obstacle as Record<string, unknown>).id)).size === value.length;
+}
+
+function parseObstacle(value: unknown): NetworkObstacleState {
+  if (!record(value) || !keys(value, ["id", "kind", "phase", "position", "rotation"])
+    || typeof value.id !== "string" || value.id.length === 0 || !obstacleKind(value.kind)
+    || !obstaclePhase(value.phase) || !record(value.position) || !record(value.rotation)) invalid();
+  return { id: value.id, kind: value.kind, phase: value.phase, position: vector(value.position), rotation: vector(value.rotation) };
+}
+
+function obstacleKind(value: unknown): value is NetworkObstacleState["kind"] {
+  return value === "movingPlatform" || value === "rotatingBeam" || value === "swingingBeam"
+    || value === "fan" || value === "conveyor" || value === "fallingPlatform";
+}
+
+function obstaclePhase(value: unknown): value is NetworkObstacleState["phase"] {
+  return value === "armed" || value === "warning" || value === "falling";
 }
 
 function parsePlayer(value: unknown): NetworkPlayerState {

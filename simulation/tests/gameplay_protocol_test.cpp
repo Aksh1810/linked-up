@@ -80,6 +80,12 @@ void roster_aware_server_messages_preserve_authoritative_state() {
   snapshot.tick = 180;
   snapshot.reset_count = 2;
   snapshot.tether_tension = 0.18f;
+  snapshot.elapsed_ticks = 180;
+  snapshot.checkpoint = 1;
+  snapshot.match_state = linked_up::MatchState::Finished;
+  snapshot.obstacles = {
+      {"lift-1", linked_up::ObstacleKind::MovingPlatform, {0.0f, 3.0f, 0.0f}, {0.0f, 0.0f, 0.0f}},
+  };
   snapshot.players = {
       {RobotColor::Blue, {-1.0f, 1.0f, 2.0f}, {0.5f, 0.0f, 0.0f}, true},
       {RobotColor::Orange, {1.0f, 2.0f, -2.0f}, {0.0f, -1.0f, 0.25f}, false},
@@ -94,6 +100,12 @@ void roster_aware_server_messages_preserve_authoritative_state() {
   assert(message["tick"].u() == 180);
   assert(message["resetCount"].u() == 2);
   assert(std::abs(message["tetherTension"].d() - 0.18) < 0.001);
+  assert(message["matchState"].s() == "finished");
+  assert(message["elapsedTicks"].u() == 180);
+  assert(message["checkpoint"].u() == 1);
+  assert(message["obstacles"].size() == 1);
+  assert(message["obstacles"][0]["id"].s() == "lift-1");
+  assert(message["obstacles"][0]["kind"].s() == "movingPlatform");
   assert(!message.has("separation"));
   assert(message["players"].size() == 4);
   assert(message["players"][0]["id"].s() == "blue");
