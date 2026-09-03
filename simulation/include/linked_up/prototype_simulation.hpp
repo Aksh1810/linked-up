@@ -33,7 +33,7 @@ struct Checkpoint {
 
 enum class MatchState { Running, Finished };
 
-enum class ObstacleKind { MovingPlatform, RotatingBeam, SwingingBeam, Fan, Conveyor, FallingPlatform };
+enum class ObstacleKind { StaticPlatform, MovingPlatform, RotatingBeam, SwingingBeam, Fan, Conveyor, FallingPlatform };
 enum class ObstaclePhase { Armed, Warning, Falling };
 
 struct ObstacleConfig {
@@ -96,6 +96,8 @@ struct Config {
   BoxVolume summit{{0.0f, 1000.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
   std::vector<ObstacleConfig> obstacles;
 };
+
+[[nodiscard]] Config default_route_config();
 
 class PrototypeSimulation {
  public:

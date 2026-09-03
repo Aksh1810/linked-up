@@ -162,6 +162,28 @@ const char* color_name(RobotColor color) {
   throw std::invalid_argument("unknown robot color");
 }
 
+Config default_route_config() {
+  Config config;
+  config.platform_half_extent = 8.0f;
+  config.fail_height = -18.0f;
+  config.checkpoints = {{
+      .volume = {{0.0f, 4.0f, 10.0f}, {4.0f, 3.0f, 3.0f}},
+      .spawn_positions = {{{-1.0f, 5.5f, 10.0f}, {1.0f, 5.5f, 10.0f}, {-3.0f, 5.5f, 10.0f}, {3.0f, 5.5f, 10.0f}}},
+  }};
+  config.summit = {{0.0f, 9.0f, 18.0f}, {4.0f, 2.0f, 3.0f}};
+  config.obstacles = {
+      {"ledge-1", ObstacleKind::StaticPlatform, {0.0f, 3.0f, 5.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
+      {"lift-1", ObstacleKind::MovingPlatform, {0.0f, 4.5f, 9.0f}, {2.0f, 0.3f, 2.0f}, {0.0f, 2.0f, 0.0f}, 180.0f, 0.0f},
+      {"ledge-2", ObstacleKind::StaticPlatform, {0.0f, 7.0f, 14.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
+      {"beam-1", ObstacleKind::RotatingBeam, {0.0f, 7.8f, 14.0f}, {3.5f, 0.2f, 0.2f}, {}, 180.0f, 0.0f},
+      {"fan-1", ObstacleKind::Fan, {0.0f, 7.5f, 14.0f}, {4.0f, 2.0f, 3.0f}, {0.0f, 0.0f, 1.0f}, 60.0f, 22.0f},
+      {"conveyor-1", ObstacleKind::Conveyor, {0.0f, 8.5f, 17.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 1.0f}, 60.0f, 3.0f},
+      {"fall-1", ObstacleKind::FallingPlatform, {-3.0f, 8.0f, 18.0f}, {1.0f, 0.3f, 1.0f}, {}, 90.0f, 8.0f},
+      {"summit-ledge", ObstacleKind::StaticPlatform, {0.0f, 8.0f, 18.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
+  };
+  return config;
+}
+
 class PrototypeSimulation::Impl {
  public:
   explicit Impl(std::vector<RobotColor> roster, Config config)
@@ -205,6 +227,13 @@ class PrototypeSimulation::Impl {
     }
     obstacle_ids_.reserve(config_.obstacles.size());
     for (const auto& obstacle : config_.obstacles) {
+      if (obstacle.kind == ObstacleKind::StaticPlatform) {
+        JPH::BodyCreationSettings settings(
+            new JPH::BoxShape({obstacle.half_extent.x, obstacle.half_extent.y, obstacle.half_extent.z}),
+            to_jolt_position(obstacle.origin), JPH::Quat::sIdentity(), JPH::EMotionType::Static, kStaticLayer);
+        obstacle_ids_.push_back(bodies.CreateAndAddBody(settings, JPH::EActivation::DontActivate));
+        continue;
+      }
       if (obstacle.kind != ObstacleKind::MovingPlatform && obstacle.kind != ObstacleKind::RotatingBeam &&
           obstacle.kind != ObstacleKind::SwingingBeam && obstacle.kind != ObstacleKind::FallingPlatform) {
         obstacle_ids_.push_back(std::nullopt);
@@ -364,6 +393,8 @@ class PrototypeSimulation::Impl {
       const float cycle = std::fmod(static_cast<float>(elapsed_ticks_) / obstacle.period_ticks, 1.0f);
       DynamicObstacleState state{.id = obstacle.id, .kind = obstacle.kind, .position = obstacle.origin};
       switch (obstacle.kind) {
+        case ObstacleKind::StaticPlatform:
+          break;
         case ObstacleKind::MovingPlatform:
           state.position = {obstacle.origin.x + obstacle.travel.x * cycle,
                             obstacle.origin.y + obstacle.travel.y * cycle,
@@ -417,7 +448,7 @@ class PrototypeSimulation::Impl {
     const auto states = obstacle_states();
     auto& bodies = physics_.GetBodyInterface();
     for (std::size_t index = 0; index < states.size(); ++index) {
-      if (!obstacle_ids_[index]) continue;
+      if (!obstacle_ids_[index] || config_.obstacles[index].kind == ObstacleKind::StaticPlatform) continue;
       const auto& state = states[index];
       const auto rotation = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), state.rotation.y);
       bodies.MoveKinematic(*obstacle_ids_[index], to_jolt_position(state.position), rotation, delta_time);
@@ -561,7 +592,7 @@ class PrototypeSimulation::Impl {
 };
 
 PrototypeSimulation::PrototypeSimulation()
-    : PrototypeSimulation({RobotColor::Blue, RobotColor::Orange}) {}
+    : PrototypeSimulation({RobotColor::Blue, RobotColor::Orange}, default_route_config()) {}
 
 PrototypeSimulation::PrototypeSimulation(std::vector<RobotColor> roster, Config config)
     : impl_(std::make_unique<Impl>(std::move(roster), config)) {}

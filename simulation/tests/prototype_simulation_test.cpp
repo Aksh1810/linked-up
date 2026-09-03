@@ -243,6 +243,13 @@ void falling_platform_warns_falls_and_resets() {
   assert(std::abs(reset.position.y - config.obstacles[0].origin.y) < 0.001f);
 }
 
+void normal_matches_receive_a_blockout_route() {
+  PrototypeSimulation simulation;
+  const auto state = simulation.snapshot();
+  assert(state.obstacles.size() >= 5);
+  assert(state.obstacles[0].kind == ObstacleKind::StaticPlatform);
+}
+
 }  // namespace
 
 int main() {
@@ -258,5 +265,6 @@ int main() {
   dynamic_obstacles_follow_deterministic_paths();
   fan_force_is_authoritative_and_volume_bound();
   falling_platform_warns_falls_and_resets();
+  normal_matches_receive_a_blockout_route();
   std::cout << "authoritative tether checks passed\n";
 }

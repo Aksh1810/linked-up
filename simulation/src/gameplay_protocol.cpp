@@ -75,6 +75,7 @@ const char* match_state_name(MatchState state) {
 
 const char* obstacle_kind_name(ObstacleKind kind) {
   switch (kind) {
+    case ObstacleKind::StaticPlatform: return "staticPlatform";
     case ObstacleKind::MovingPlatform: return "movingPlatform";
     case ObstacleKind::RotatingBeam: return "rotatingBeam";
     case ObstacleKind::SwingingBeam: return "swingingBeam";

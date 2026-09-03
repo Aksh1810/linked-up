@@ -360,6 +360,7 @@ export class Game {
       if (!mesh) {
         mesh = MeshBuilder.CreateBox(`obstacle-${state.id}`, { width: 2, height: 0.35, depth: 2 }, this.#scene);
         const colors: Record<NetworkObstacleState["kind"], string> = {
+          staticPlatform: "#65c66a",
           movingPlatform: "#f6c56f", rotatingBeam: "#e97552", swingingBeam: "#db7698",
           fan: "#7ee7ef", conveyor: "#757d95", fallingPlatform: "#af8d68",
         };

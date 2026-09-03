@@ -142,7 +142,7 @@ CreateMatchResult MatchManager::create(std::string room_id, std::vector<MatchPla
   std::vector<RobotColor> roster;
   roster.reserve(players.size());
   for (const auto& player : players) roster.push_back(player.color);
-  match->simulation = std::make_unique<PrototypeSimulation>(std::move(roster));
+  match->simulation = std::make_unique<PrototypeSimulation>(std::move(roster), default_route_config());
 
   CreateMatchResult result;
   result.match_id = new_match_id();

@@ -1,6 +1,6 @@
 # Networking
 
-Phase 7 links the loopback HTTP/SignalR lobby to a direct authenticated C++
+Phase 8 retains the loopback HTTP/SignalR lobby and direct authenticated C++
 gameplay match. Local endpoints are intentionally loopback-only; this document
 does not describe a production transport or TLS deployment.
 
@@ -90,12 +90,14 @@ sequences, and at most 120 messages per one-second window. Binary, malformed,
 out-of-range, stale, and excessive input closes the connection with a stable
 JSON error first.
 
-Snapshots contain server tick, reset count, normalized tether tension, and the
+Snapshots contain server tick, reset count, normalized tether tension,
+authoritative match state, elapsed ticks, checkpoint index, ordered obstacle
+transforms, and the
 ordered two-to-four player positions, velocities, grounded
 flags, and applied input acknowledgements:
 
 ```json
-{"type":"snapshot","tick":180,"resetCount":0,"tetherTension":0,"players":[{"id":"blue","acknowledgedInput":42,"position":{"x":-1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true},{"id":"orange","acknowledgedInput":37,"position":{"x":1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true}]}
+{"type":"snapshot","tick":180,"resetCount":0,"tetherTension":0,"matchState":"running","elapsedTicks":180,"checkpoint":1,"obstacles":[{"id":"lift-1","kind":"movingPlatform","phase":"armed","position":{"x":0,"y":3,"z":9},"rotation":{"x":0,"y":0,"z":0}}],"players":[{"id":"blue","acknowledgedInput":42,"position":{"x":-1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true},{"id":"orange","acknowledgedInput":37,"position":{"x":1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true}]}
 ```
 
 `acknowledgedInput` is the last sequence actually applied before that snapshot,
@@ -105,7 +107,7 @@ not merely the latest input received by the networking thread.
 
 The browser retains at most 32 snapshots and samples six server ticks (100 ms)
 behind the estimated server clock. It linearly interpolates remote position,
-velocity and tether tension and never extrapolates beyond the
+velocity, tether tension, and matching obstacle transforms and never extrapolates beyond the
 newest state. Duplicate, reordered, and older-reset snapshots are ignored; a
 newer reset clears the buffer.
 

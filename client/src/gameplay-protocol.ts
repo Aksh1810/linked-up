@@ -36,7 +36,7 @@ export interface ServerSnapshot {
 
 export interface NetworkObstacleState {
   id: string;
-  kind: "movingPlatform" | "rotatingBeam" | "swingingBeam" | "fan" | "conveyor" | "fallingPlatform";
+  kind: "staticPlatform" | "movingPlatform" | "rotatingBeam" | "swingingBeam" | "fan" | "conveyor" | "fallingPlatform";
   phase: "armed" | "warning" | "falling";
   position: Vector3State;
   rotation: Vector3State;
@@ -127,7 +127,7 @@ function parseObstacle(value: unknown): NetworkObstacleState {
 }
 
 function obstacleKind(value: unknown): value is NetworkObstacleState["kind"] {
-  return value === "movingPlatform" || value === "rotatingBeam" || value === "swingingBeam"
+  return value === "staticPlatform" || value === "movingPlatform" || value === "rotatingBeam" || value === "swingingBeam"
     || value === "fan" || value === "conveyor" || value === "fallingPlatform";
 }
 

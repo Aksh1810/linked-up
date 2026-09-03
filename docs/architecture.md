@@ -37,7 +37,9 @@ exactly one fixed tick; the caller owns wall-clock scheduling.
 `linked-up-server` starts both loopback listeners: gRPC on `127.0.0.1:50051`
 and gameplay WebSockets on `127.0.0.1:9002`. Crow validates admission and JSON
 input, copies the latest intent into the fixed 60 Hz simulation loop, and
-broadcasts match snapshots every third tick. Each player state acknowledges
+broadcasts match snapshots every third tick. The same snapshot carries the
+authoritative route state: checkpoint, elapsed ticks, running/finished status,
+and ordered obstacle transforms. Each player state acknowledges
 the last input sequence actually applied by that tick. A disconnect neutralizes
 that player's input.
 
