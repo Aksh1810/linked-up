@@ -195,6 +195,9 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
+.telemetry output { color: #d9edf3; }
+.telemetry #tether-label { color: #ffcf73; }
+
 .slot-picker {
   top: 50%;
   left: 50%;

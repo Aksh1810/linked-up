@@ -29,6 +29,7 @@ import { cameraRelativeMovement } from "./motion";
 import { PredictionReconciler, SnapshotBuffer } from "./network-smoothing";
 import { obstacleAppearance, obstacleDimensions } from "./world-blockout";
 import { formatCompletionTime } from "./completion";
+import { describeGameplayStatus, tetherLabel } from "./gameplay-status";
 
 interface RobotVisual {
   root: TransformNode;
@@ -65,6 +66,7 @@ export class Game {
   readonly #speedLabel: HTMLOutputElement;
   readonly #tickLabel: HTMLOutputElement;
   readonly #routeLabel: HTMLOutputElement;
+  readonly #tetherLabel: HTMLOutputElement;
   readonly #headings = new Map<PlayerId, number>();
   readonly #animationTimes = new Map<PlayerId, number>();
   readonly #snapshots = new SnapshotBuffer();
@@ -145,10 +147,12 @@ export class Game {
     const speedLabel = document.querySelector<HTMLOutputElement>("#speed-label");
     const tickLabel = document.querySelector<HTMLOutputElement>("#tick-label");
     const routeLabel = document.querySelector<HTMLOutputElement>("#route-label");
-    if (!speedLabel || !tickLabel || !routeLabel) throw new Error("Missing gameplay telemetry");
+    const tetherLabelElement = document.querySelector<HTMLOutputElement>("#tether-label");
+    if (!speedLabel || !tickLabel || !routeLabel || !tetherLabelElement) throw new Error("Missing gameplay telemetry");
     this.#speedLabel = speedLabel;
     this.#tickLabel = tickLabel;
     this.#routeLabel = routeLabel;
+    this.#tetherLabel = tetherLabelElement;
 
     this.#connection = new GameplayConnection(options.gameplayUrl, options.identity, {
       onWelcome: this.#onWelcome,
@@ -359,6 +363,8 @@ export class Game {
     this.#tickLabel.value = `Tick ${snapshot.tick}`;
     const zone = ["Grass", "Construction", "Industrial", "Sky", "Summit"][Math.min(snapshot.checkpoint, 4)];
     this.#routeLabel.value = `${zone} · Checkpoint ${snapshot.checkpoint}`;
+    this.#tetherLabel.value = `${tetherLabel(snapshot.tetherTension)} tether`;
+    this.#options.onStatus(describeGameplayStatus(snapshot, this.#player ?? snapshot.players[0].id));
     this.#finishStartup();
   };
 
