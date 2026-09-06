@@ -6,3 +6,4 @@
 docs/
 /backend/**/bin/
 /backend/**/obj/
+.cursorrules

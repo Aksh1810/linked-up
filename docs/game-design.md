@@ -7,7 +7,7 @@ jumps, and falls create consequences for the whole group.
 ## Controls
 
 - WASD: move
-- Space: jump
+- Space: jump; hold while hanging to climb toward a grounded teammate
 - Mouse: third-person camera
 
 The v1 scope excludes grabbing, stamina, combat, accounts, progression,
@@ -34,8 +34,9 @@ the slack length, spring and damping forces grow up to a configurable cap. A
 hard maximum distance protects simulation stability. The browser will render
 slack, glow, strain, and yank reactions from authoritative tension state.
 
-The current prototype supports two players. Three- and four-player topology is
-kept as a later playtesting decision rather than buried in premature code.
+The current authoritative route supports two to four players. Tether topology
+is intentionally simple and remains a playtesting target rather than a hidden
+client-side rule.
 
 ## World
 
@@ -51,3 +52,9 @@ Reusable obstacles include static and moving platforms, rotating and swinging
 beams, elevators, fans, conveyors, and falling platforms. Full-team failure
 quickly resets the current checkpoint; completion requires the linked group to
 reach the summit condition.
+
+Phase 9 supplies a low-poly blockout of all five regions. Grass starts with
+wide, forgiving jumps; Construction introduces timed platforms; Industrial
+combines conveyors, fans, and machinery; Sky uses sparse platforms and wind;
+and the stable Summit gives the whole roster a fair shared finish. C++ owns
+the dimensions and zone of each obstacle; browser meshes only render them.

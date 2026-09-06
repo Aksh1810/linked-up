@@ -139,7 +139,12 @@ export class SnapshotBuffer {
 
 function sameObstacles(left: ServerSnapshot, right: ServerSnapshot): boolean {
   return left.obstacles.length === right.obstacles.length && left.obstacles.every(
-    (obstacle, index) => obstacle.id === right.obstacles[index].id && obstacle.kind === right.obstacles[index].kind,
+    (obstacle, index) => {
+      const other = right.obstacles[index];
+      return obstacle.id === other.id && obstacle.kind === other.kind && obstacle.zone === other.zone
+        && obstacle.halfExtent.x === other.halfExtent.x && obstacle.halfExtent.y === other.halfExtent.y
+        && obstacle.halfExtent.z === other.halfExtent.z;
+    },
   );
 }
 

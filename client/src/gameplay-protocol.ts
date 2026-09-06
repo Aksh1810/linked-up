@@ -37,7 +37,9 @@ export interface ServerSnapshot {
 export interface NetworkObstacleState {
   id: string;
   kind: "staticPlatform" | "movingPlatform" | "rotatingBeam" | "swingingBeam" | "fan" | "conveyor" | "fallingPlatform";
+  zone: "grass" | "construction" | "industrial" | "sky" | "summit";
   phase: "armed" | "warning" | "falling";
+  halfExtent: Vector3State;
   position: Vector3State;
   rotation: Vector3State;
 }
@@ -120,10 +122,21 @@ function obstacles(value: unknown): value is unknown[] {
 }
 
 function parseObstacle(value: unknown): NetworkObstacleState {
-  if (!record(value) || !keys(value, ["id", "kind", "phase", "position", "rotation"])
+  if (!record(value) || !keys(value, ["id", "kind", "zone", "phase", "halfExtent", "position", "rotation"])
     || typeof value.id !== "string" || value.id.length === 0 || !obstacleKind(value.kind)
-    || !obstaclePhase(value.phase) || !record(value.position) || !record(value.rotation)) invalid();
-  return { id: value.id, kind: value.kind, phase: value.phase, position: vector(value.position), rotation: vector(value.rotation) };
+    || !zone(value.zone) || !obstaclePhase(value.phase) || !record(value.halfExtent)
+    || !record(value.position) || !record(value.rotation)) invalid();
+  const halfExtent = vector(value.halfExtent);
+  if (halfExtent.x <= 0 || halfExtent.y <= 0 || halfExtent.z <= 0) invalid();
+  return {
+    id: value.id, kind: value.kind, zone: value.zone, phase: value.phase, halfExtent,
+    position: vector(value.position), rotation: vector(value.rotation),
+  };
+}
+
+function zone(value: unknown): value is NetworkObstacleState["zone"] {
+  return value === "grass" || value === "construction" || value === "industrial"
+    || value === "sky" || value === "summit";
 }
 
 function obstacleKind(value: unknown): value is NetworkObstacleState["kind"] {

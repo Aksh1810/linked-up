@@ -92,12 +92,12 @@ JSON error first.
 
 Snapshots contain server tick, reset count, normalized tether tension,
 authoritative match state, elapsed ticks, checkpoint index, ordered obstacle
-transforms, and the
+transforms, dimensions, and presentation-only zone labels, and the
 ordered two-to-four player positions, velocities, grounded
 flags, and applied input acknowledgements:
 
 ```json
-{"type":"snapshot","tick":180,"resetCount":0,"tetherTension":0,"matchState":"running","elapsedTicks":180,"checkpoint":1,"obstacles":[{"id":"lift-1","kind":"movingPlatform","phase":"armed","position":{"x":0,"y":3,"z":9},"rotation":{"x":0,"y":0,"z":0}}],"players":[{"id":"blue","acknowledgedInput":42,"position":{"x":-1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true},{"id":"orange","acknowledgedInput":37,"position":{"x":1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true}]}
+{"type":"snapshot","tick":180,"resetCount":0,"tetherTension":0,"matchState":"running","elapsedTicks":180,"checkpoint":1,"obstacles":[{"id":"construction-mover-1","kind":"movingPlatform","zone":"construction","phase":"armed","halfExtent":{"x":2,"y":0.3,"z":2},"position":{"x":0,"y":12,"z":41},"rotation":{"x":0,"y":0,"z":0}}],"players":[{"id":"blue","acknowledgedInput":42,"position":{"x":-1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true},{"id":"orange","acknowledgedInput":37,"position":{"x":1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true}]}
 ```
 
 `acknowledgedInput` is the last sequence actually applied before that snapshot,

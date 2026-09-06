@@ -88,6 +88,10 @@ bool known_color(RobotColor color) {
   return static_cast<std::size_t>(color) <= static_cast<std::size_t>(RobotColor::Purple);
 }
 
+bool known_zone(Zone zone) {
+  return static_cast<std::size_t>(zone) <= static_cast<std::size_t>(Zone::Summit);
+}
+
 void validate_roster(const std::vector<RobotColor>& roster) {
   if (roster.size() < 2 || roster.size() > 4) {
     throw std::invalid_argument("roster must have two to four players");
@@ -137,7 +141,7 @@ Config validated(Config config) {
         !finite(obstacle.travel) || !finite(obstacle.period_ticks) || !finite(obstacle.amplitude) ||
         obstacle.half_extent.x <= 0.0f || obstacle.half_extent.y <= 0.0f ||
         obstacle.half_extent.z <= 0.0f || obstacle.period_ticks <= 0.0f ||
-        obstacle.amplitude < 0.0f ||
+        obstacle.amplitude < 0.0f || !known_zone(obstacle.zone) ||
         std::any_of(config.obstacles.begin(), config.obstacles.begin() + static_cast<std::ptrdiff_t>(index),
                     [&](const ObstacleConfig& previous) { return previous.id == obstacle.id; })) {
       throw std::invalid_argument("invalid obstacle configuration");
@@ -165,21 +169,58 @@ const char* color_name(RobotColor color) {
 Config default_route_config() {
   Config config;
   config.platform_half_extent = 8.0f;
-  config.fail_height = -18.0f;
-  config.checkpoints = {{
-      .volume = {{0.0f, 4.0f, 10.0f}, {4.0f, 3.0f, 3.0f}},
-      .spawn_positions = {{{-1.0f, 5.5f, 10.0f}, {1.0f, 5.5f, 10.0f}, {-3.0f, 5.5f, 10.0f}, {3.0f, 5.5f, 10.0f}}},
-  }};
-  config.summit = {{0.0f, 9.0f, 18.0f}, {4.0f, 2.0f, 3.0f}};
+  config.fail_height = -24.0f;
+  config.checkpoints = {
+      {{{0.0f, 9.8f, 29.0f}, {5.0f, 2.0f, 4.0f}},
+       {{{-1.0f, 9.8f, 29.0f}, {1.0f, 9.8f, 29.0f}, {-3.0f, 9.8f, 29.0f}, {3.0f, 9.8f, 29.0f}}}},
+      {{{0.0f, 20.2f, 65.0f}, {5.0f, 2.0f, 4.0f}},
+       {{{-1.0f, 20.2f, 65.0f}, {1.0f, 20.2f, 65.0f}, {-3.0f, 20.2f, 65.0f}, {3.0f, 20.2f, 65.0f}}}},
+      {{{0.0f, 30.4f, 101.0f}, {5.0f, 2.0f, 4.0f}},
+       {{{-1.0f, 30.4f, 101.0f}, {1.0f, 30.4f, 101.0f}, {-3.0f, 30.4f, 101.0f}, {3.0f, 30.4f, 101.0f}}}},
+      {{{0.0f, 40.8f, 137.0f}, {5.0f, 2.0f, 4.0f}},
+       {{{-1.0f, 40.8f, 137.0f}, {1.0f, 40.8f, 137.0f}, {-3.0f, 40.8f, 137.0f}, {3.0f, 40.8f, 137.0f}}}},
+  };
+  config.summit = {{0.0f, 46.2f, 155.0f}, {5.0f, 2.0f, 4.0f}};
   config.obstacles = {
-      {"ledge-1", ObstacleKind::StaticPlatform, {0.0f, 1.8f, 5.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
-      {"lift-1", ObstacleKind::MovingPlatform, {0.0f, 4.5f, 9.0f}, {2.0f, 0.3f, 2.0f}, {0.0f, 2.0f, 0.0f}, 180.0f, 0.0f},
-      {"ledge-2", ObstacleKind::StaticPlatform, {0.0f, 7.0f, 14.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
-      {"beam-1", ObstacleKind::RotatingBeam, {0.0f, 7.8f, 14.0f}, {3.5f, 0.2f, 0.2f}, {}, 180.0f, 0.0f},
-      {"fan-1", ObstacleKind::Fan, {0.0f, 7.5f, 14.0f}, {4.0f, 2.0f, 3.0f}, {0.0f, 0.0f, 1.0f}, 60.0f, 22.0f},
-      {"conveyor-1", ObstacleKind::Conveyor, {0.0f, 8.5f, 17.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 1.0f}, 60.0f, 3.0f},
-      {"fall-1", ObstacleKind::FallingPlatform, {-3.0f, 8.0f, 18.0f}, {1.0f, 0.3f, 1.0f}, {}, 90.0f, 8.0f},
-      {"summit-ledge", ObstacleKind::StaticPlatform, {0.0f, 8.0f, 18.0f}, {4.0f, 0.4f, 3.0f}, {}, 60.0f, 0.0f},
+      {"grass-ledge-1", ObstacleKind::StaticPlatform, {0.0f, 1.8f, 5.0f}, {4.5f, 0.4f, 3.0f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"grass-ledge-2", ObstacleKind::StaticPlatform, {0.0f, 3.8f, 11.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"grass-elevator-1", ObstacleKind::MovingPlatform, {0.0f, 5.4f, 17.0f}, {2.5f, 0.35f, 2.5f}, {0.0f, 1.0f, 0.0f}, 180.0f, 0.0f, Zone::Grass},
+      {"grass-ledge-3", ObstacleKind::StaticPlatform, {0.0f, 7.0f, 23.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"grass-ledge-4", ObstacleKind::StaticPlatform, {0.0f, 8.4f, 29.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+
+      {"construction-ledge-0", ObstacleKind::StaticPlatform, {1.5f, 9.2f, 32.0f}, {3.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"construction-ledge-1", ObstacleKind::StaticPlatform, {-1.5f, 10.5f, 35.0f}, {3.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"construction-mover-1", ObstacleKind::MovingPlatform, {1.5f, 12.1f, 41.0f}, {2.0f, 0.3f, 2.0f}, {-3.0f, 0.0f, 0.0f}, 150.0f, 0.0f, Zone::Construction},
+      {"construction-ledge-2", ObstacleKind::StaticPlatform, {0.0f, 13.8f, 47.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"construction-beam-1", ObstacleKind::RotatingBeam, {0.0f, 14.6f, 47.0f}, {3.5f, 0.2f, 0.25f}, {}, 180.0f, 0.0f, Zone::Construction},
+      {"construction-fall-1", ObstacleKind::FallingPlatform, {-2.4f, 15.6f, 53.0f}, {1.4f, 0.3f, 1.4f}, {}, 120.0f, 7.0f, Zone::Construction},
+      {"construction-ledge-3", ObstacleKind::StaticPlatform, {1.5f, 15.6f, 53.0f}, {2.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"construction-elevator-1", ObstacleKind::MovingPlatform, {0.0f, 17.2f, 59.0f}, {2.5f, 0.35f, 2.0f}, {0.0f, 1.0f, 0.0f}, 180.0f, 0.0f, Zone::Construction},
+      {"construction-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 18.8f, 65.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+
+      {"industrial-ledge-1", ObstacleKind::StaticPlatform, {0.0f, 21.0f, 71.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"industrial-conveyor-base", ObstacleKind::StaticPlatform, {0.0f, 22.6f, 77.0f}, {4.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"industrial-conveyor-1", ObstacleKind::Conveyor, {0.0f, 24.0f, 77.0f}, {4.5f, 1.2f, 2.5f}, {0.0f, 0.0f, -1.0f}, 60.0f, 3.0f, Zone::Industrial},
+      {"industrial-ledge-2", ObstacleKind::StaticPlatform, {-1.5f, 24.2f, 83.0f}, {3.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"industrial-fan-1", ObstacleKind::Fan, {-1.5f, 25.7f, 83.0f}, {3.0f, 1.6f, 2.0f}, {1.0f, 0.0f, 0.0f}, 60.0f, 18.0f, Zone::Industrial},
+      {"industrial-elevator-1", ObstacleKind::MovingPlatform, {1.5f, 25.8f, 89.0f}, {2.0f, 0.35f, 2.0f}, {0.0f, 1.2f, 0.0f}, 180.0f, 0.0f, Zone::Industrial},
+      {"industrial-ledge-3", ObstacleKind::StaticPlatform, {0.0f, 27.8f, 95.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"industrial-beam-1", ObstacleKind::RotatingBeam, {0.0f, 28.6f, 95.0f}, {3.5f, 0.2f, 0.25f}, {}, 160.0f, 0.0f, Zone::Industrial},
+      {"industrial-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 29.0f, 101.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+
+      {"sky-rock-1", ObstacleKind::StaticPlatform, {-2.0f, 31.2f, 107.0f}, {2.5f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"sky-mover-1", ObstacleKind::MovingPlatform, {2.0f, 32.8f, 113.0f}, {2.0f, 0.35f, 2.0f}, {-3.0f, 0.0f, 0.0f}, 180.0f, 0.0f, Zone::Sky},
+      {"sky-rock-2", ObstacleKind::StaticPlatform, {0.0f, 34.5f, 119.0f}, {3.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"sky-swing-1", ObstacleKind::SwingingBeam, {0.0f, 35.5f, 119.0f}, {3.0f, 0.2f, 0.25f}, {}, 180.0f, 1.0f, Zone::Sky},
+      {"sky-fan-1", ObstacleKind::Fan, {0.0f, 36.0f, 119.0f}, {3.5f, 1.5f, 2.0f}, {1.0f, 0.0f, 0.0f}, 60.0f, 14.0f, Zone::Sky},
+      {"sky-rock-3", ObstacleKind::StaticPlatform, {-2.0f, 36.4f, 125.0f}, {2.5f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"sky-mover-2", ObstacleKind::MovingPlatform, {2.0f, 38.0f, 131.0f}, {2.0f, 0.35f, 2.0f}, {-3.0f, 0.0f, 0.0f}, 160.0f, 0.0f, Zone::Sky},
+      {"sky-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 39.4f, 137.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Sky},
+
+      {"summit-ledge-0", ObstacleKind::StaticPlatform, {1.5f, 40.2f, 140.0f}, {3.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"summit-ledge-1", ObstacleKind::StaticPlatform, {0.0f, 41.4f, 143.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"summit-ledge-2", ObstacleKind::StaticPlatform, {-1.5f, 43.0f, 149.0f}, {3.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"summit-ledge-3", ObstacleKind::StaticPlatform, {0.0f, 44.8f, 155.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Summit},
   };
   return config;
 }
@@ -297,6 +338,28 @@ class PrototypeSimulation::Impl {
       if (inputs_[player].jump && grounded && !jump_consumed_[player]) {
         velocity.SetY(config_.jump_speed);
         jump_consumed_[player] = true;
+      } else if (inputs_[player].jump && !grounded) {
+        JPH::RVec3 anchor_position = JPH::RVec3::sZero();
+        std::size_t anchor_count = 0;
+        for (std::size_t teammate = 0; teammate < player_ids_.size(); ++teammate) {
+          if (teammate == player || !is_grounded(teammate)) continue;
+          anchor_position += bodies.GetPosition(player_ids_[teammate]);
+          ++anchor_count;
+        }
+        if (anchor_count > 0) {
+          anchor_position /= static_cast<float>(anchor_count);
+          const JPH::Vec3 toward_anchor =
+              JPH::Vec3(anchor_position - bodies.GetPosition(player_ids_[player]));
+          const float distance = toward_anchor.Length();
+          if (distance > config_.tether_slack_length &&
+              toward_anchor.GetY() > kPlayerRadius) {
+            const JPH::Vec3 direction = toward_anchor / distance;
+            const float reel_speed = config_.jump_speed * 0.75f;
+            const float current_speed = velocity.Dot(direction);
+            if (current_speed < reel_speed) velocity += direction * (reel_speed - current_speed);
+            jump_consumed_[player] = true;
+          }
+        }
       } else if (!inputs_[player].jump && grounded) {
         jump_consumed_[player] = false;
       }
@@ -321,10 +384,12 @@ class PrototypeSimulation::Impl {
       if (!finite(player.position) || !finite(player.velocity)) {
         throw std::runtime_error("non-finite authoritative physics state");
       }
-      if (player.position.y < config_.fail_height) {
-        reset();
-        return;
-      }
+    }
+    if (std::all_of(state.players.begin(), state.players.end(), [&](const PlayerState& player) {
+          return player.position.y < config_.fail_height;
+        })) {
+      reset();
+      return;
     }
     update_progress(state);
   }
@@ -391,15 +456,22 @@ class PrototypeSimulation::Impl {
     states.reserve(config_.obstacles.size());
     for (const auto& obstacle : config_.obstacles) {
       const float cycle = std::fmod(static_cast<float>(elapsed_ticks_) / obstacle.period_ticks, 1.0f);
-      DynamicObstacleState state{.id = obstacle.id, .kind = obstacle.kind, .position = obstacle.origin};
+      DynamicObstacleState state{.id = obstacle.id,
+                                 .kind = obstacle.kind,
+                                 .position = obstacle.origin,
+                                 .half_extent = obstacle.half_extent,
+                                 .zone = obstacle.zone};
       switch (obstacle.kind) {
         case ObstacleKind::StaticPlatform:
           break;
-        case ObstacleKind::MovingPlatform:
-          state.position = {obstacle.origin.x + obstacle.travel.x * cycle,
-                            obstacle.origin.y + obstacle.travel.y * cycle,
-                            obstacle.origin.z + obstacle.travel.z * cycle};
+        case ObstacleKind::MovingPlatform: {
+          const float leg = std::fmod(static_cast<float>(elapsed_ticks_) / obstacle.period_ticks, 2.0f);
+          const float progress = leg <= 1.0f ? leg : 2.0f - leg;
+          state.position = {obstacle.origin.x + obstacle.travel.x * progress,
+                            obstacle.origin.y + obstacle.travel.y * progress,
+                            obstacle.origin.z + obstacle.travel.z * progress};
           break;
+        }
         case ObstacleKind::RotatingBeam:
           state.rotation.y = 2.0f * kPi * cycle;
           break;
@@ -435,9 +507,12 @@ class PrototypeSimulation::Impl {
     for (std::size_t index = 0; index < config_.obstacles.size(); ++index) {
       const auto& obstacle = config_.obstacles[index];
       if (obstacle.kind != ObstacleKind::FallingPlatform || falling_started_ticks_[index]) continue;
-      const BoxVolume volume{obstacle.origin, obstacle.half_extent};
       if (std::any_of(player_ids_.begin(), player_ids_.end(), [&](const JPH::BodyID& body) {
-            return contains(volume, from_jolt(bodies.GetPosition(body)));
+            const Vec3 position = from_jolt(bodies.GetPosition(body));
+            return std::abs(position.y - (obstacle.origin.y + obstacle.half_extent.y +
+                                           kPlayerStandingHeight)) <= 0.08f &&
+                   std::abs(position.x - obstacle.origin.x) <= obstacle.half_extent.x + kPlayerRadius &&
+                   std::abs(position.z - obstacle.origin.z) <= obstacle.half_extent.z + kPlayerRadius;
           })) {
         falling_started_ticks_[index] = elapsed_ticks_;
       }

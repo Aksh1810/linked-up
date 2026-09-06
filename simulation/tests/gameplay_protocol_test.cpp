@@ -84,7 +84,8 @@ void roster_aware_server_messages_preserve_authoritative_state() {
   snapshot.checkpoint = 1;
   snapshot.match_state = linked_up::MatchState::Finished;
   snapshot.obstacles = {
-      {"lift-1", linked_up::ObstacleKind::MovingPlatform, {0.0f, 3.0f, 0.0f}, {0.0f, 0.0f, 0.0f}},
+      {"lift-1", linked_up::ObstacleKind::MovingPlatform, {0.0f, 3.0f, 0.0f},
+       {0.0f, 0.0f, 0.0f}, {2.0f, 0.3f, 2.0f}, linked_up::Zone::Construction},
   };
   snapshot.players = {
       {RobotColor::Blue, {-1.0f, 1.0f, 2.0f}, {0.5f, 0.0f, 0.0f}, true},
@@ -106,6 +107,8 @@ void roster_aware_server_messages_preserve_authoritative_state() {
   assert(message["obstacles"].size() == 1);
   assert(message["obstacles"][0]["id"].s() == "lift-1");
   assert(message["obstacles"][0]["kind"].s() == "movingPlatform");
+  assert(message["obstacles"][0]["zone"].s() == "construction");
+  assert(std::abs(message["obstacles"][0]["halfExtent"]["x"].d() - 2.0) < 0.001);
   assert(!message.has("separation"));
   assert(message["players"].size() == 4);
   assert(message["players"][0]["id"].s() == "blue");

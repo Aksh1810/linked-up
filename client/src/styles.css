@@ -178,8 +178,8 @@ canvas {
 }
 
 #game-canvas:focus-visible {
-  outline: 3px solid #ff914d;
-  outline-offset: -5px;
+  outline: 2px solid rgb(244 251 255 / 38%);
+  outline-offset: -4px;
 }
 
 .title-plate,
@@ -452,6 +452,24 @@ kbd {
   text-transform: uppercase;
 }
 
+.completion {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  min-width: min(88vw, 360px);
+  padding: 2rem 2.2rem;
+  text-align: center;
+  color: #f7fbff;
+  background: rgba(19, 43, 65, 0.96);
+  border: 2px solid #ff914d;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.completion h2 { margin: .25rem 0 .5rem; font-size: clamp(2rem, 6vw, 3.5rem); }
+.completion-message { margin: 0 0 1rem; color: #ffcf73; font-weight: 800; letter-spacing: .12em; }
+.completion button { margin-top: 1rem; }
+
 .status-dot {
   width: 7px;
   height: 7px;
@@ -472,6 +490,7 @@ kbd {
 }
 
 #player-label,
+#route-label,
 #tick-label {
   padding-left: 9px;
   border-left: 1px solid rgb(244 251 255 / 28%);

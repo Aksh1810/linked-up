@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { encodeInput, parseServerMessage } from "./gameplay-protocol.ts";
+import { obstacleAppearance, obstacleDimensions } from "./world-blockout.ts";
 
 const blue = {
   id: "blue",
@@ -32,13 +33,35 @@ const purple = {
   grounded: true,
 };
 
-const world = { matchState: "running", elapsedTicks: 8, checkpoint: 0, obstacles: [] };
+const world = {
+  matchState: "running", elapsedTicks: 8, checkpoint: 0,
+  obstacles: [{
+    id: "grass-ledge-1", kind: "staticPlatform", zone: "grass", phase: "armed",
+    halfExtent: { x: 4, y: 0.4, z: 3 },
+    position: { x: 0, y: 1.8, z: 5 }, rotation: { x: 0, y: 0, z: 0 },
+  }],
+};
 
 test("input encoding preserves the wire contract", () => {
   assert.equal(
     encodeInput({ sequence: 4, clientTick: 9, moveX: 0.5, moveZ: -1, jump: true }),
     '{"type":"input","sequence":4,"clientTick":9,"moveX":0.5,"moveZ":-1,"jump":true}',
   );
+});
+
+test("obstacle meshes use authoritative half extents", () => {
+  assert.deepEqual(obstacleDimensions({ x: 4, y: 0.4, z: 3 }), {
+    width: 8, height: 0.8, depth: 6,
+  });
+});
+
+test("obstacle appearance keeps zone depth while highlighting hazards", () => {
+  assert.deepEqual(obstacleAppearance("grass", "staticPlatform"), {
+    base: "#456852", top: "#527f5a",
+  });
+  assert.deepEqual(obstacleAppearance("industrial", "rotatingBeam"), {
+    base: "#39495b", top: "#ef7d57",
+  });
 });
 
 test("welcome, snapshot, and error messages are validated", () => {
@@ -59,6 +82,8 @@ test("welcome, snapshot, and error messages are validated", () => {
   assert.equal(snapshot.type, "snapshot");
   assert.equal(snapshot.players[0].acknowledgedInput, 12);
   assert.equal(snapshot.players[1].id, "orange");
+  assert.equal(snapshot.obstacles[0].zone, "grass");
+  assert.equal(snapshot.obstacles[0].halfExtent.x, 4);
 
   const error = parseServerMessage(
     '{"type":"error","code":"slot_taken","message":"That player is already connected."}',
@@ -115,4 +140,9 @@ test("malformed authoritative messages are rejected", () => {
   assert.throws(() => parseServerMessage(
     '{"type":"snapshot","tick":8,"resetCount":0,"tetherTension":0,"players":[{"id":"blue","acknowledgedInput":0,"position":{"x":1e999,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true},{"id":"orange","acknowledgedInput":0,"position":{"x":1,"y":1,"z":0},"velocity":{"x":0,"y":0,"z":0},"grounded":true}]}',
   ));
+  assert.throws(() => parseServerMessage(JSON.stringify({
+    type: "snapshot", tick: 8, resetCount: 0, tetherTension: 0, players: [blue, orange],
+    ...world,
+    obstacles: [{ ...world.obstacles[0], halfExtent: { x: 0, y: 0.4, z: 3 } }],
+  })));
 });

@@ -5,6 +5,7 @@ import "@babylonjs/core/Engines/webgpuEngine";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -26,6 +27,8 @@ import type {
 import { InputController } from "./input";
 import { cameraRelativeMovement } from "./motion";
 import { PredictionReconciler, SnapshotBuffer } from "./network-smoothing";
+import { obstacleAppearance, obstacleDimensions } from "./world-blockout";
+import { formatCompletionTime } from "./completion";
 
 interface RobotVisual {
   root: TransformNode;
@@ -52,6 +55,7 @@ export class Game {
   readonly #engine: AbstractEngine;
   readonly #scene: Scene;
   readonly #camera: ArcRotateCamera;
+  readonly #shadows: ShadowGenerator;
   readonly #input = new InputController();
   readonly #robots = new Map<PlayerId, RobotVisual>();
   readonly #obstacles = new Map<string, Mesh>();
@@ -60,6 +64,7 @@ export class Game {
   readonly #options: GameOptions;
   readonly #speedLabel: HTMLOutputElement;
   readonly #tickLabel: HTMLOutputElement;
+  readonly #routeLabel: HTMLOutputElement;
   readonly #headings = new Map<PlayerId, number>();
   readonly #animationTimes = new Map<PlayerId, number>();
   readonly #snapshots = new SnapshotBuffer();
@@ -87,34 +92,47 @@ export class Game {
     this.#engine = engine;
     this.#options = options;
     this.#scene = new Scene(engine);
-    this.#scene.clearColor = Color4.FromHexString("#8fd9ffff");
+    this.#scene.clearColor = Color4.FromHexString("#86c4d4ff");
     this.#scene.fogMode = Scene.FOGMODE_EXP2;
-    this.#scene.fogDensity = 0.008;
-    this.#scene.fogColor = Color3.FromHexString("#8fd9ff");
+    this.#scene.fogDensity = 0.006;
+    this.#scene.fogColor = Color3.FromHexString("#86c4d4");
+    this.#scene.imageProcessingConfiguration.exposure = 0.88;
+    this.#scene.imageProcessingConfiguration.contrast = 1.12;
 
     this.#camera = new ArcRotateCamera(
       "follow-camera",
-      -Math.PI / 2,
-      1.05,
-      8,
+      -Math.PI / 2 - 0.42,
+      1.18,
+      16.5,
       new Vector3(0, 1.6, 0),
       this.#scene,
     );
     this.#camera.lowerBetaLimit = 0.65;
     this.#camera.upperBetaLimit = 1.38;
-    this.#camera.lowerRadiusLimit = 6;
-    this.#camera.upperRadiusLimit = 10;
+    this.#camera.lowerRadiusLimit = 10;
+    this.#camera.upperRadiusLimit = 22;
     this.#camera.inertia = 0.82;
     this.#camera.panningSensibility = 0;
     this.#camera.wheelPrecision = 60;
     this.#camera.attachControl(canvas, true);
 
-    const sun = new DirectionalLight("sun", new Vector3(-0.5, -1, 0.35), this.#scene);
-    sun.position = new Vector3(10, 16, -8);
-    sun.intensity = 1.2;
+    const sun = new DirectionalLight("sun", new Vector3(-0.55, -1, -0.35), this.#scene);
+    sun.position = new Vector3(12, 18, -10);
+    sun.diffuse = Color3.FromHexString("#ffe1ad");
+    sun.intensity = 1.05;
+    sun.autoUpdateExtends = true;
+    sun.autoCalcShadowZBounds = true;
     const fill = new HemisphericLight("sky-fill", new Vector3(0, 1, 0), this.#scene);
-    fill.intensity = 0.55;
-    fill.groundColor = Color3.FromHexString("#315947");
+    fill.diffuse = Color3.FromHexString("#c9e7ea");
+    fill.intensity = 0.65;
+    fill.groundColor = Color3.FromHexString("#6b858c");
+
+    this.#shadows = new ShadowGenerator(1024, sun);
+    this.#shadows.useBlurExponentialShadowMap = true;
+    this.#shadows.blurKernel = 16;
+    this.#shadows.bias = 0.0005;
+    this.#shadows.normalBias = 0.02;
+    this.#shadows.darkness = 0.62;
 
     this.#createWorld();
     this.#tether = MeshBuilder.CreateLines(
@@ -126,9 +144,11 @@ export class Game {
 
     const speedLabel = document.querySelector<HTMLOutputElement>("#speed-label");
     const tickLabel = document.querySelector<HTMLOutputElement>("#tick-label");
-    if (!speedLabel || !tickLabel) throw new Error("Missing gameplay telemetry");
+    const routeLabel = document.querySelector<HTMLOutputElement>("#route-label");
+    if (!speedLabel || !tickLabel || !routeLabel) throw new Error("Missing gameplay telemetry");
     this.#speedLabel = speedLabel;
     this.#tickLabel = tickLabel;
+    this.#routeLabel = routeLabel;
 
     this.#connection = new GameplayConnection(options.gameplayUrl, options.identity, {
       onWelcome: this.#onWelcome,
@@ -158,31 +178,33 @@ export class Game {
   }
 
   #createWorld(): void {
-    const soil = this.#material("platform-soil", "#8a603e");
-    const grass = this.#material("platform-grass", "#65c66a");
-    const edge = this.#material("platform-edge", "#3d944f");
+    const soil = this.#material("platform-soil", "#4b3831");
+    const grass = this.#material("platform-grass", "#527f5a");
+    const edge = this.#material("platform-edge", "#294b39");
 
     const base = MeshBuilder.CreateBox(
       "bounded-platform",
-      { width: 10, height: 1.2, depth: 10 },
+      { width: 16, height: 1.2, depth: 16 },
       this.#scene,
     );
     base.position.y = -0.65;
     base.material = soil;
+    base.receiveShadows = true;
 
     const lawn = MeshBuilder.CreateBox(
       "bounded-lawn",
-      { width: 10, height: 0.16, depth: 10 },
+      { width: 16, height: 0.16, depth: 16 },
       this.#scene,
     );
     lawn.position.y = -0.01;
     lawn.material = grass;
+    lawn.receiveShadows = true;
 
     for (const [index, x, z, width, depth] of [
-      [0, 0, -4.88, 10, 0.24],
-      [1, 0, 4.88, 10, 0.24],
-      [2, -4.88, 0, 0.24, 10],
-      [3, 4.88, 0, 0.24, 10],
+      [0, 0, -7.88, 16, 0.24],
+      [1, 0, 7.88, 16, 0.24],
+      [2, -7.88, 0, 0.24, 16],
+      [3, 7.88, 0, 0.24, 16],
     ] as const) {
       const rim = MeshBuilder.CreateBox(
         `platform-rim-${index}`,
@@ -191,13 +213,60 @@ export class Game {
       );
       rim.position.set(x, 0.1, z);
       rim.material = edge;
+      rim.receiveShadows = true;
+    }
+
+    const campPad = MeshBuilder.CreateBox(
+      "base-camp-pad",
+      { width: 5.2, height: 0.04, depth: 3.2 },
+      this.#scene,
+    );
+    campPad.position.y = 0.095;
+    campPad.material = this.#material("base-camp-pad-material", "#294955");
+    campPad.receiveShadows = true;
+    campPad.isPickable = false;
+    for (const [id, x, color] of [
+      ["blue", -1.25, "#347e98"], ["orange", 1.25, "#a76039"],
+    ] as const) {
+      const lane = MeshBuilder.CreateBox(
+        `base-camp-${id}-lane`,
+        { width: 1.8, height: 0.02, depth: 2.35 },
+        this.#scene,
+      );
+      lane.position.set(x, 0.125, 0);
+      lane.material = this.#material(`base-camp-${id}-lane-material`, color);
+      lane.receiveShadows = true;
+      lane.isPickable = false;
+    }
+
+    const cloudMaterial = this.#material("cloud-haze", "#d9ecec");
+    cloudMaterial.disableLighting = true;
+    cloudMaterial.emissiveColor = Color3.FromHexString("#bedde1");
+    cloudMaterial.alpha = 0.72;
+    for (const [index, [x, y, z]] of [
+      [-18, -5, 10], [18, 2, 33], [-19, 9, 56], [18, 15, 78],
+      [-18, 22, 101], [19, 29, 123], [-18, 36, 145],
+    ].entries()) {
+      for (const [piece, offsetX, offsetY, scale] of [
+        [0, -2.1, -0.2, 0.8], [1, 0, 0.25, 1.15], [2, 2.2, -0.15, 0.72],
+      ] as const) {
+        const cloud = MeshBuilder.CreateSphere(
+          `cloud-${index}-${piece}`,
+          { diameter: 4.5, segments: 8 },
+          this.#scene,
+        );
+        cloud.position.set(x + offsetX, y + offsetY, z);
+        cloud.scaling.set(scale * 1.45, scale * 0.42, scale * 0.78);
+        cloud.material = cloudMaterial;
+        cloud.isPickable = false;
+      }
     }
   }
 
   #createRobot(id: PlayerId): RobotVisual {
     const colors: Record<PlayerId, readonly [string, string]> = {
-      blue: ["#38bdf8", "#167ca8"], orange: ["#ff914d", "#bd5c20"],
-      green: ["#65c66a", "#3d944f"], purple: ["#b58cff", "#7046bf"],
+      blue: ["#38a6cc", "#176789"], orange: ["#e68045", "#98502e"],
+      green: ["#62a86d", "#356d49"], purple: ["#9a79c8", "#644a8f"],
     };
     const main = this.#material(`${id}-main`, colors[id][0]);
     const dark = this.#material(`${id}-dark`, colors[id][1]);
@@ -219,6 +288,8 @@ export class Game {
       mesh.position = position;
       mesh.material = material;
       mesh.parent = parent;
+      mesh.receiveShadows = true;
+      this.#shadows.addShadowCaster(mesh);
       return mesh;
     };
 
@@ -238,6 +309,8 @@ export class Game {
     socket.rotation.x = Math.PI / 2;
     socket.material = socketMaterial;
     socket.parent = visual;
+    socket.receiveShadows = true;
+    this.#shadows.addShadowCaster(socket);
 
     const leftArm = new TransformNode(`${id}-left-arm-pivot`, this.#scene);
     leftArm.position.set(-0.73, 0.28, 0);
@@ -264,7 +337,7 @@ export class Game {
     const material = new StandardMaterial(name, this.#scene);
     material.diffuseColor = Color3.FromHexString(diffuse);
     material.specularColor = Color3.FromHexString("#163247").scale(0.18);
-    if (emissive) material.emissiveColor = Color3.FromHexString(emissive);
+    if (emissive) material.emissiveColor = Color3.FromHexString(emissive).scale(0.72);
     return material;
   }
 
@@ -284,6 +357,8 @@ export class Game {
     this.#snapshot = snapshot;
     this.#predictor?.reconcile(snapshot);
     this.#tickLabel.value = `Tick ${snapshot.tick}`;
+    const zone = ["Grass", "Construction", "Industrial", "Sky", "Summit"][Math.min(snapshot.checkpoint, 4)];
+    this.#routeLabel.value = `${zone} · Checkpoint ${snapshot.checkpoint}`;
     this.#finishStartup();
   };
 
@@ -322,7 +397,16 @@ export class Game {
       this.#updateObstacles(sampled?.obstacles ?? this.#snapshot.obstacles);
       if (this.#snapshot.matchState === "finished" && !this.#completed) {
         this.#completed = true;
-        this.#options.onStatus(`Summit reached in ${(this.#snapshot.elapsedTicks / this.#tickRate).toFixed(1)}s`);
+        const completion = document.querySelector<HTMLElement>("#completion");
+        const completionTime = document.querySelector<HTMLOutputElement>("#completion-time");
+        if (completion && completionTime) {
+          completionTime.value = formatCompletionTime(this.#snapshot.elapsedTicks, this.#tickRate);
+          completion.hidden = false;
+          document.querySelector<HTMLButtonElement>("#completion-leave")?.addEventListener(
+            "click", () => { window.location.href = "./"; }, { once: true },
+          );
+        }
+        this.#options.onStatus("Summit reached");
       }
     }
 
@@ -336,10 +420,10 @@ export class Game {
         clientTick: ++this.#clientTick,
         moveX: movement.x,
         moveZ: movement.z,
-        jump: input.jumpPressed,
+        jump: input.jumpHeld || input.jumpPressed,
       };
       const sent = this.#connection.sendInput(wireInput);
-      if (sent) this.#predictor?.record(wireInput);
+      if (sent) this.#predictor?.record({ ...wireInput, jump: input.jumpPressed });
       else if (input.jumpPressed) this.#input.queueJump();
     }
 
@@ -358,13 +442,22 @@ export class Game {
     for (const state of obstacles) {
       let mesh = this.#obstacles.get(state.id);
       if (!mesh) {
-        mesh = MeshBuilder.CreateBox(`obstacle-${state.id}`, { width: 2, height: 0.35, depth: 2 }, this.#scene);
-        const colors: Record<NetworkObstacleState["kind"], string> = {
-          staticPlatform: "#65c66a",
-          movingPlatform: "#f6c56f", rotatingBeam: "#e97552", swingingBeam: "#db7698",
-          fan: "#7ee7ef", conveyor: "#757d95", fallingPlatform: "#af8d68",
-        };
-        mesh.material = this.#material(`obstacle-${state.id}-material`, colors[state.kind]);
+        const dimensions = obstacleDimensions(state.halfExtent);
+        const appearance = obstacleAppearance(state.zone, state.kind);
+        mesh = MeshBuilder.CreateBox(`obstacle-${state.id}`, dimensions, this.#scene);
+        const baseMaterial = this.#material(`obstacle-${state.id}-base`, appearance.base);
+        baseMaterial.emissiveColor = Color3.FromHexString(appearance.base).scale(0.12);
+        mesh.material = baseMaterial;
+        mesh.receiveShadows = true;
+        const cap = MeshBuilder.CreateBox(
+          `obstacle-${state.id}-cap`,
+          { width: dimensions.width + 0.04, height: 0.08, depth: dimensions.depth + 0.04 },
+          this.#scene,
+        );
+        cap.position.y = dimensions.height / 2 + 0.04;
+        cap.material = this.#material(`obstacle-${state.id}-top`, appearance.top);
+        cap.parent = mesh;
+        cap.receiveShadows = true;
         this.#obstacles.set(state.id, mesh);
       }
       mesh.position.set(state.position.x, state.position.y, state.position.z);

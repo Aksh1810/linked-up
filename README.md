@@ -4,7 +4,7 @@ Linked-Up is a planned 2–4 player cooperative browser climbing game where
 small robots are physically connected by an energy tether. One player's jump
 or fall can pull the rest of the team.
 
-The repository currently contains the Phase 8 local gameplay slice:
+The repository currently contains the Phase 9 local gameplay slice:
 
 - a Redis-backed ASP.NET Core lobby for temporary 2–4 player rooms, live
   SignalR membership updates, host migration, and host-only start;
@@ -14,10 +14,9 @@ The repository currently contains the Phase 8 local gameplay slice:
   Blue, Orange, Green, and Purple robots, at 60 Hz with snapshots at 20 Hz;
 - a browser countdown and direct authenticated WebSocket handoff, with local
   prediction and authoritative smoothing for the dynamic roster.
-- a compact authoritative blockout route with static/moving platforms, a fan,
-  checkpoint reset, summit completion, and server-owned obstacle snapshots.
-
-The full five-zone climbing world remains later.
+- one authoritative five-zone blockout route—Grass, Construction, Industrial,
+  Sky, and Summit—with 35 low-poly obstacles, four team checkpoints, and
+  server-owned geometry descriptors for browser rendering.
 
 ## Architecture
 
@@ -55,8 +54,8 @@ cmake --build build -j 4
 ctest --test-dir build --output-on-failure
 ```
 
-The C++ checks cover authoritative tether behavior and the gameplay JSON trust
-boundary.
+The C++ checks cover authoritative tether and route behavior plus the gameplay
+JSON trust boundary.
 
 ## Run a local room-to-match handoff
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -21,6 +22,7 @@ using linked_up::PlayerInput;
 using linked_up::RobotColor;
 using linked_up::PrototypeSimulation;
 using linked_up::Vec3;
+using linked_up::Zone;
 
 bool finite(Vec3 value) {
   return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
@@ -99,6 +101,114 @@ void falling_player_pulls_teammate() {
   }
 
   assert(observed_fall_pull);
+}
+
+void one_fallen_player_remains_rescuable() {
+  Config config;
+  config.platform_half_extent = 2.0f;
+  config.spawn_positions = {{{0.0f, 1.5f, 0.0f}, {1.5f, 1.5f, 0.0f}}};
+  config.fail_height = 0.0f;
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.set_input(RobotColor::Orange, {1.0f, 0.0f, false});
+
+  for (int tick = 0; tick < 240; ++tick) {
+    simulation.step();
+    const auto state = simulation.snapshot();
+    if (state.reset_count > 0 || state.players[1].position.y < config.fail_height) break;
+  }
+
+  const auto state = simulation.snapshot();
+  assert(state.reset_count == 0);
+  assert(state.players[0].grounded);
+  assert(state.players[1].position.y < config.fail_height);
+}
+
+void hanging_player_can_reel_toward_the_team() {
+  Config config;
+  config.platform_half_extent = 20.0f;
+  config.spawn_positions = {{{18.0f, 1.5f, 0.0f}, {20.4f, 1.5f, 0.0f}}};
+  config.tether_slack_length = 4.0f;
+  config.tether_hard_length = 7.0f;
+  config.fail_height = -100.0f;
+  PrototypeSimulation climbing({RobotColor::Blue, RobotColor::Orange}, config);
+  PrototypeSimulation control({RobotColor::Blue, RobotColor::Orange}, config);
+  for (auto* simulation : {&climbing, &control}) {
+    simulation->set_input(RobotColor::Blue, {-1.0f, 0.0f, false});
+    simulation->set_input(RobotColor::Orange, {1.0f, 0.0f, false});
+  }
+
+  bool hanging = false;
+  for (int tick = 0; tick < 240 && !hanging; ++tick) {
+    climbing.step();
+    control.step();
+    const auto state = climbing.snapshot();
+    hanging = state.players[0].grounded && !state.players[1].grounded &&
+              state.players[1].position.y < 0.5f;
+  }
+  assert(hanging);
+
+  climbing.set_input(RobotColor::Orange, {-1.0f, 0.0f, true});
+  control.set_input(RobotColor::Orange, {-1.0f, 0.0f, false});
+  climbing.step();
+  control.step();
+  assert(climbing.snapshot().players[1].velocity.y >
+         control.snapshot().players[1].velocity.y + 0.5f);
+  bool rescued = false;
+  for (int tick = 0; tick < 240 && !rescued; ++tick) {
+    climbing.step();
+    rescued = climbing.snapshot().players[1].grounded;
+  }
+  assert(rescued);
+}
+
+void full_team_fall_resets_the_checkpoint() {
+  Config config;
+  config.platform_half_extent = 2.0f;
+  config.spawn_positions = {{{-1.5f, 1.5f, 0.0f}, {1.5f, 1.5f, 0.0f}}};
+  config.fail_height = 0.0f;
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.set_input(RobotColor::Blue, {-1.0f, 0.0f, false});
+  simulation.set_input(RobotColor::Orange, {1.0f, 0.0f, false});
+
+  for (int tick = 0; tick < 300 && simulation.snapshot().reset_count == 0; ++tick) {
+    simulation.step();
+  }
+
+  assert(simulation.snapshot().reset_count == 1);
+}
+
+void falling_team_cannot_reel_without_a_grounded_anchor() {
+  Config config;
+  config.platform_half_extent = 2.0f;
+  config.spawn_positions = {{{0.5f, 1.5f, 0.0f}, {1.5f, 1.5f, 0.0f}}};
+  config.fail_height = -100.0f;
+  PrototypeSimulation jumping({RobotColor::Blue, RobotColor::Orange}, config);
+  PrototypeSimulation control({RobotColor::Blue, RobotColor::Orange}, config);
+  for (auto* simulation : {&jumping, &control}) {
+    simulation->set_input(RobotColor::Blue, {1.0f, 0.0f, false});
+    simulation->set_input(RobotColor::Orange, {1.0f, 0.0f, false});
+  }
+
+  bool team_falling = false;
+  for (int tick = 0; tick < 240 && !team_falling; ++tick) {
+    jumping.step();
+    control.step();
+    const auto state = jumping.snapshot();
+    team_falling = !state.players[0].grounded && !state.players[1].grounded &&
+                   state.players[0].position.y < 0.8f && state.players[1].position.y < 0.8f;
+  }
+  assert(team_falling);
+
+  jumping.set_input(RobotColor::Blue, {0.0f, 0.0f, true});
+  jumping.set_input(RobotColor::Orange, {0.0f, 0.0f, true});
+  control.set_input(RobotColor::Blue, {});
+  control.set_input(RobotColor::Orange, {});
+  jumping.step();
+  control.step();
+  assert(std::abs(jumping.snapshot().players[0].velocity.y -
+                  control.snapshot().players[0].velocity.y) < 0.001f);
+  assert(std::abs(jumping.snapshot().players[1].velocity.y -
+                  control.snapshot().players[1].velocity.y) < 0.001f);
 }
 
 void malformed_input_is_neutral() {
@@ -226,6 +336,22 @@ void dynamic_obstacles_follow_deterministic_paths() {
   assert(std::abs(state.obstacles[1].rotation.y - 1.570796f) < 0.05f);
 }
 
+void moving_platform_reverses_without_teleporting() {
+  Config config;
+  config.obstacles = {
+      {"lift-1", ObstacleKind::MovingPlatform, {0.0f, 3.0f, 0.0f}, {2.0f, 0.3f, 2.0f},
+       {0.0f, 4.0f, 0.0f}, 120.0f, 0.0f},
+  };
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  for (int tick = 0; tick < 119; ++tick) simulation.step();
+  const float before_turnaround = simulation.snapshot().obstacles[0].position.y;
+
+  simulation.step();
+  const float at_turnaround = simulation.snapshot().obstacles[0].position.y;
+
+  assert(std::abs(at_turnaround - before_turnaround) < 0.05f);
+}
+
 void fan_force_is_authoritative_and_volume_bound() {
   Config config;
   config.obstacles = {
@@ -242,9 +368,10 @@ void fan_force_is_authoritative_and_volume_bound() {
 void falling_platform_warns_falls_and_resets() {
   Config config;
   config.obstacles = {
-      {"fall-1", ObstacleKind::FallingPlatform, {0.0f, 1.5f, 0.0f}, {5.0f, 2.0f, 5.0f},
+      {"fall-1", ObstacleKind::FallingPlatform, {0.0f, 3.0f, 0.0f}, {2.0f, 0.3f, 2.0f},
        {}, 3.0f, 6.0f},
   };
+  config.spawn_positions = {{{-1.0f, 4.3f, 0.0f}, {1.0f, 4.3f, 0.0f}}};
   PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
   simulation.step();
   assert(simulation.snapshot().obstacles[0].phase == ObstaclePhase::Warning);
@@ -268,7 +395,7 @@ void normal_matches_receive_a_blockout_route() {
 void default_route_opening_ledge_fits_a_single_jump() {
   const Config config = linked_up::default_route_config();
   const auto ledge = std::find_if(config.obstacles.begin(), config.obstacles.end(), [](const ObstacleConfig& obstacle) {
-    return obstacle.id == "ledge-1";
+    return obstacle.id == "grass-ledge-1";
   });
   assert(ledge != config.obstacles.end());
   PrototypeSimulation simulation;
@@ -284,6 +411,20 @@ void default_route_opening_ledge_fits_a_single_jump() {
   assert(apex >= ledge->origin.y + ledge->half_extent.y + 1.1f);
 }
 
+void default_route_covers_all_five_blockout_zones() {
+  const Config config = linked_up::default_route_config();
+  std::set<Zone> zones;
+  for (const ObstacleConfig& obstacle : config.obstacles) {
+    zones.insert(obstacle.zone);
+    assert(obstacle.half_extent.x > 0.0f);
+    assert(obstacle.half_extent.y > 0.0f);
+    assert(obstacle.half_extent.z > 0.0f);
+  }
+  assert(config.checkpoints.size() == 4);
+  assert(config.obstacles.size() >= 35);
+  assert(zones.size() == 5);
+}
+
 }  // namespace
 
 int main() {
@@ -291,6 +432,10 @@ int main() {
   jumping_from_an_elevated_platform_is_authoritative();
   two_player_tether_hard_limit_is_authoritative();
   falling_player_pulls_teammate();
+  hanging_player_can_reel_toward_the_team();
+  one_fallen_player_remains_rescuable();
+  full_team_fall_resets_the_checkpoint();
+  falling_team_cannot_reel_without_a_grounded_anchor();
   malformed_input_is_neutral();
   reset_restores_spawn_state();
   three_and_four_player_rosters_are_authoritative();
@@ -300,7 +445,9 @@ int main() {
   dynamic_obstacles_follow_deterministic_paths();
   fan_force_is_authoritative_and_volume_bound();
   falling_platform_warns_falls_and_resets();
+  moving_platform_reverses_without_teleporting();
   normal_matches_receive_a_blockout_route();
   default_route_opening_ledge_fits_a_single_jump();
+  default_route_covers_all_five_blockout_zones();
   std::cout << "authoritative tether checks passed\n";
 }

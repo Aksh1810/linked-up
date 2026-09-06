@@ -86,6 +86,17 @@ const char* obstacle_kind_name(ObstacleKind kind) {
   throw std::invalid_argument("unknown obstacle kind");
 }
 
+const char* zone_name(Zone zone) {
+  switch (zone) {
+    case Zone::Grass: return "grass";
+    case Zone::Construction: return "construction";
+    case Zone::Industrial: return "industrial";
+    case Zone::Sky: return "sky";
+    case Zone::Summit: return "summit";
+  }
+  throw std::invalid_argument("unknown obstacle zone");
+}
+
 const char* obstacle_phase_name(ObstaclePhase phase) {
   switch (phase) {
     case ObstaclePhase::Armed: return "armed";
@@ -181,7 +192,9 @@ std::string serialize_snapshot(
     auto& obstacle = message["obstacles"][index];
     obstacle["id"] = source.id;
     obstacle["kind"] = obstacle_kind_name(source.kind);
+    obstacle["zone"] = zone_name(source.zone);
     obstacle["phase"] = obstacle_phase_name(source.phase);
+    write_vector(obstacle["halfExtent"], source.half_extent);
     write_vector(obstacle["position"], source.position);
     write_vector(obstacle["rotation"], source.rotation);
   }

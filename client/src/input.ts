@@ -12,11 +12,12 @@ export class InputController {
     window.addEventListener("blur", this.#onBlur);
   }
 
-  consume(): MotionInput {
+  consume(): MotionInput & { jumpHeld: boolean } {
     const input = {
       x: Number(this.#pressed.has("KeyD")) - Number(this.#pressed.has("KeyA")),
       z: Number(this.#pressed.has("KeyW")) - Number(this.#pressed.has("KeyS")),
       jumpPressed: this.#jumpQueued,
+      jumpHeld: this.#pressed.has("Space"),
     };
     this.#jumpQueued = false;
     return input;

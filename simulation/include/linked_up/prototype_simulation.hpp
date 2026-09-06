@@ -33,6 +33,8 @@ struct Checkpoint {
 
 enum class MatchState { Running, Finished };
 
+enum class Zone { Grass, Construction, Industrial, Sky, Summit };
+
 enum class ObstacleKind { StaticPlatform, MovingPlatform, RotatingBeam, SwingingBeam, Fan, Conveyor, FallingPlatform };
 enum class ObstaclePhase { Armed, Warning, Falling };
 
@@ -44,6 +46,7 @@ struct ObstacleConfig {
   Vec3 travel;
   float period_ticks{60.0f};
   float amplitude{};
+  Zone zone{Zone::Grass};
 };
 
 struct DynamicObstacleState {
@@ -51,6 +54,8 @@ struct DynamicObstacleState {
   ObstacleKind kind{};
   Vec3 position;
   Vec3 rotation;
+  Vec3 half_extent;
+  Zone zone{Zone::Grass};
   ObstaclePhase phase{ObstaclePhase::Armed};
 };
 

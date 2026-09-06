@@ -72,7 +72,7 @@
           </span>
           <span>Move</span>
         </div>
-        <div class="control-row"><kbd class="space-key">SPACE</kbd><span>Jump</span></div>
+        <div class="control-row"><kbd class="space-key">SPACE</kbd><span>Jump / climb</span></div>
         <div class="control-row"><span class="mouse-icon" aria-hidden="true"></span><span>Drag to look</span></div>
       </section>
 
@@ -91,9 +91,18 @@
         <span class="status-dot"></span>
         <span id="status-label">Starting local simulation</span>
         <output id="player-label">No robot</output>
+        <output id="route-label">Grass · Checkpoint 0</output>
         <output id="tick-label">Tick —</output>
         <output id="speed-label">0.0 m/s</output>
       </div>
+
+      <section class="completion" id="completion" hidden aria-labelledby="completion-title">
+        <p class="eyebrow">Summit reached</p>
+        <h2 id="completion-title">LINKED—UP</h2>
+        <p class="completion-message">YOU MADE IT!</p>
+        <p>Time: <output id="completion-time">00:00</output></p>
+        <button id="completion-leave" type="button">Leave Room</button>
+      </section>
 
       <div class="loading" id="loading" aria-hidden="false">
         <span></span>
