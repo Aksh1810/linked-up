@@ -33,6 +33,7 @@ import { formatCompletionTime } from "./completion";
 import { describeGameplayStatus, tetherLabel } from "./gameplay-status";
 import { controlsHintVisible } from "./controls-hint";
 import { cameraSettings, readUiPreferences, type UiPreferences } from "./ui-preferences";
+import { tetherPath } from "./tether-path";
 
 interface RobotVisual {
   root: TransformNode;
@@ -157,7 +158,7 @@ export class Game {
     this.#createWorld();
     this.#tether = MeshBuilder.CreateLines(
       "energy-tether",
-      { points: [Vector3.Zero(), Vector3.Zero()], updatable: true },
+      { points: Array.from({ length: 13 }, () => Vector3.Zero()), updatable: true },
       this.#scene,
     );
     this.#tether.color = Color3.FromHexString("#ff914d");
@@ -595,16 +596,25 @@ export class Game {
   }
 
   #tetherPoints(): Vector3[] {
-    const points = this.#roster.map((id) => {
+    const anchors = this.#roster.map((id) => {
       const robot = this.#robots.get(id)!.root;
-      return new Vector3(
-        robot.position.x - Math.sin(robot.rotation.y) * 0.76,
-        robot.position.y + 0.1,
-        robot.position.z - Math.cos(robot.rotation.y) * 0.76,
-      );
+      return {
+        x: robot.position.x - Math.sin(robot.rotation.y) * 0.76,
+        y: robot.position.y + 0.1,
+        z: robot.position.z - Math.cos(robot.rotation.y) * 0.76,
+      };
     });
-    if (points.length > 2) points.push(points[0].clone());
-    return points.length ? points : [Vector3.Zero(), Vector3.Zero()];
+    if (anchors.length < 2) return Array.from({ length: 13 }, () => Vector3.Zero());
+    const segmentCount = anchors.length === 2 ? 1 : anchors.length;
+    const points: Vector3[] = [];
+    for (let index = 0; index < segmentCount; ++index) {
+      const segment = tetherPath(
+        anchors[index], anchors[(index + 1) % anchors.length], this.#snapshot?.obstacles ?? [],
+      );
+      points.push(...segment.slice(index === 0 ? 0 : 1).map(({ x, y, z }) => new Vector3(x, y, z)));
+    }
+    while (points.length < 13) points.push(points.at(-1)!.clone());
+    return points;
   }
 
   #updateTether(tension = 0): void {

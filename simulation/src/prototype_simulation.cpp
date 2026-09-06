@@ -348,15 +348,23 @@ class PrototypeSimulation::Impl {
         }
         if (anchor_count > 0) {
           anchor_position /= static_cast<float>(anchor_count);
+          const auto player_position = bodies.GetPosition(player_ids_[player]);
           const JPH::Vec3 toward_anchor =
-              JPH::Vec3(anchor_position - bodies.GetPosition(player_ids_[player]));
+              JPH::Vec3(anchor_position - player_position);
           const float distance = toward_anchor.Length();
-          if (distance > config_.tether_slack_length &&
-              toward_anchor.GetY() > kPlayerRadius) {
-            const JPH::Vec3 direction = toward_anchor / distance;
+          const auto ledge_target = ledge_reel_target(player_position, anchor_position);
+          const JPH::Vec3 toward_target = JPH::Vec3(
+              ledge_target.value_or(anchor_position) - player_position);
+          const float target_distance = toward_target.Length();
+          if ((distance > config_.tether_slack_length || ledge_target) &&
+              toward_anchor.GetY() > kPlayerRadius && target_distance > 0.0001f) {
+            const JPH::Vec3 direction = toward_target / target_distance;
             const float reel_speed = config_.jump_speed * 0.75f;
             const float current_speed = velocity.Dot(direction);
             if (current_speed < reel_speed) velocity += direction * (reel_speed - current_speed);
+            if (ledge_target && std::abs(toward_target.GetY()) < 0.001f) {
+              velocity.SetY(std::max(velocity.GetY(), 0.0f));
+            }
             jump_consumed_[player] = true;
           }
         }
@@ -583,6 +591,70 @@ class PrototypeSimulation::Impl {
           std::abs(position.GetZ() - platform.GetZ()) <= obstacle.half_extent.z + kPlayerRadius) return true;
     }
     return false;
+  }
+
+  std::optional<JPH::RVec3> ledge_reel_target(
+      JPH::RVec3 player, JPH::RVec3 anchor) const {
+    const auto target_for_platform = [&](JPH::RVec3 center, Vec3 half_extent)
+        -> std::optional<JPH::RVec3> {
+      const float top = static_cast<float>(center.GetY()) + half_extent.y;
+      if (std::abs(anchor.GetY() - (top + kPlayerStandingHeight)) > 0.12f ||
+          std::abs(anchor.GetX() - center.GetX()) > half_extent.x + kPlayerRadius ||
+          std::abs(anchor.GetZ() - center.GetZ()) > half_extent.z + kPlayerRadius) {
+        return std::nullopt;
+      }
+
+      const float clearance = kPlayerRadius + 0.12f;
+      const std::array<float, 4> edges{
+          static_cast<float>(center.GetX()) - half_extent.x - clearance,
+          static_cast<float>(center.GetX()) + half_extent.x + clearance,
+          static_cast<float>(center.GetZ()) - half_extent.z - clearance,
+          static_cast<float>(center.GetZ()) + half_extent.z + clearance,
+      };
+      const std::array<float, 4> distances{
+          std::abs(static_cast<float>(player.GetX()) - edges[0]),
+          std::abs(static_cast<float>(player.GetX()) - edges[1]),
+          std::abs(static_cast<float>(player.GetZ()) - edges[2]),
+          std::abs(static_cast<float>(player.GetZ()) - edges[3]),
+      };
+      const std::size_t side = static_cast<std::size_t>(
+          std::min_element(distances.begin(), distances.end()) - distances.begin());
+      JPH::RVec3 lip = player;
+      if (side < 2) lip.SetX(edges[side]);
+      else lip.SetZ(edges[side]);
+
+      const bool outside = side == 0 ? player.GetX() <= edges[0] + 0.02f
+          : side == 1 ? player.GetX() >= edges[1] - 0.02f
+          : side == 2 ? player.GetZ() <= edges[2] + 0.02f
+                      : player.GetZ() >= edges[3] - 0.02f;
+      const float clear_height = top + kPlayerStandingHeight + 0.08f;
+      if (player.GetY() < clear_height) {
+        if (outside) lip.SetY(clear_height);
+        return lip;
+      }
+      const bool over_platform =
+          std::abs(player.GetX() - center.GetX()) <= half_extent.x + kPlayerRadius &&
+          std::abs(player.GetZ() - center.GetZ()) <= half_extent.z + kPlayerRadius;
+      return over_platform ? std::nullopt : std::optional<JPH::RVec3>{anchor};
+    };
+
+    if (auto target = target_for_platform({0.0f, -0.5f, 0.0f},
+                                          {config_.platform_half_extent, 0.5f,
+                                           config_.platform_half_extent})) {
+      return target;
+    }
+    const auto& bodies = physics_.GetBodyInterface();
+    for (std::size_t index = 0; index < obstacle_ids_.size(); ++index) {
+      const auto& obstacle = config_.obstacles[index];
+      if (!obstacle_ids_[index] || (obstacle.kind != ObstacleKind::StaticPlatform &&
+                                   obstacle.kind != ObstacleKind::MovingPlatform &&
+                                   obstacle.kind != ObstacleKind::FallingPlatform)) continue;
+      if (auto target = target_for_platform(bodies.GetPosition(*obstacle_ids_[index]),
+                                            obstacle.half_extent)) {
+        return target;
+      }
+    }
+    return std::nullopt;
   }
 
   void apply_tether() {

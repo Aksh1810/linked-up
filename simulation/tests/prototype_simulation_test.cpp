@@ -161,6 +161,27 @@ void hanging_player_can_reel_toward_the_team() {
   assert(rescued);
 }
 
+void hanging_player_can_clear_an_overhead_ledge() {
+  Config config;
+  config.platform_half_extent = 0.5f;
+  config.obstacles = {
+      {"ledge", ObstacleKind::StaticPlatform, {0.0f, 4.0f, 0.0f}, {3.0f, 0.5f, 3.0f}, {}, 60.0f, 0.0f},
+  };
+  config.spawn_positions = {{{0.0f, 5.5f, 0.0f}, {2.5f, 2.5f, 0.0f}}};
+  config.fail_height = -100.0f;
+  PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
+  simulation.set_input(RobotColor::Orange, {0.0f, 0.0f, true});
+
+  bool rescued = false;
+  for (int tick = 0; tick < 360 && !rescued; ++tick) {
+    simulation.step();
+    const auto orange = simulation.snapshot().players[1];
+    rescued = orange.grounded && orange.position.y > 4.5f;
+  }
+
+  assert(rescued);
+}
+
 void full_team_fall_resets_the_checkpoint() {
   Config config;
   config.platform_half_extent = 2.0f;
@@ -433,6 +454,7 @@ int main() {
   two_player_tether_hard_limit_is_authoritative();
   falling_player_pulls_teammate();
   hanging_player_can_reel_toward_the_team();
+  hanging_player_can_clear_an_overhead_ledge();
   one_fallen_player_remains_rescuable();
   full_team_fall_resets_the_checkpoint();
   falling_team_cannot_reel_without_a_grounded_anchor();
