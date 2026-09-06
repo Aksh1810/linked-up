@@ -8,10 +8,14 @@ export function tetherLabel(tension: number): "Linked" | "Stretched" | "Taut" {
   return "Linked";
 }
 
-export function describeGameplayStatus(snapshot: ServerSnapshot, localId: PlayerId): string {
+export function describeGameplayStatus(
+  snapshot: ServerSnapshot,
+  localId: PlayerId,
+  previousResetCount = snapshot.resetCount,
+): string {
   if (snapshot.matchState === "finished") return "Summit reached";
   const hanging = snapshot.players.find((player) => player.id !== localId && !player.grounded);
   if (hanging) return `${displayName(hanging.id)} is hanging — hold Space to climb`;
-  if (snapshot.resetCount > 0) return `Checkpoint ${snapshot.checkpoint} restored`;
-  return `${tetherLabel(snapshot.tetherTension)} tether`;
+  if (snapshot.resetCount > previousResetCount) return `Checkpoint ${snapshot.checkpoint} restored`;
+  return "Climb together";
 }

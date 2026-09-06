@@ -75,7 +75,7 @@
         <div class="control-row"><kbd class="space-key">SPACE</kbd><span>Jump / climb</span></div>
         <div class="control-row"><span class="mouse-icon" aria-hidden="true"></span><span>Drag to look</span></div>
         <button class="controls-hint" id="controls-hint" type="button">Click the game to focus. Hold Space while hanging to climb.</button>
-        <button class="camera-reset" id="camera-reset" type="button">Reset camera</button>
+        <button class="settings-toggle" id="settings-toggle" type="button">Settings</button>
       </section>
 
       <aside class="route" aria-label="Climb route">
@@ -89,15 +89,41 @@
         </ol>
       </aside>
 
-      <div class="telemetry" role="status" aria-live="polite">
+      <div class="telemetry">
         <span class="status-dot"></span>
-        <span id="status-label">Starting local simulation</span>
+        <span id="status-label" role="status" aria-live="polite">Starting local simulation</span>
         <output id="player-label">No robot</output>
         <output id="route-label">Grass · Checkpoint 0</output>
         <output id="tether-label">Linked tether</output>
-        <output id="tick-label">Tick —</output>
         <output id="speed-label">0.0 m/s</output>
       </div>
+
+      <details class="debug-panel">
+        <summary>Debug</summary>
+        <output id="tick-label">Tick —</output>
+      </details>
+
+      <dialog class="settings-panel" id="settings-panel" aria-labelledby="settings-title">
+        <div class="settings-heading">
+          <div>
+            <p class="eyebrow">Player setup</p>
+            <h2 id="settings-title">Settings</h2>
+          </div>
+          <button id="settings-close" type="button" aria-label="Close settings">×</button>
+        </div>
+        <label for="camera-sensitivity">Camera sensitivity</label>
+        <select id="camera-sensitivity">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <label class="check-setting"><input id="invert-camera" type="checkbox"> Invert vertical camera</label>
+        <div class="settings-actions">
+          <button id="camera-reset" type="button">Reset camera</button>
+          <button id="fullscreen-toggle" type="button">Enter fullscreen</button>
+        </div>
+        <p class="settings-help">WASD moves relative to the camera. Hold Space while hanging to climb toward a grounded teammate.</p>
+      </dialog>
 
       <section class="completion" id="completion" hidden aria-labelledby="completion-title">
         <p class="eyebrow">Summit reached</p>

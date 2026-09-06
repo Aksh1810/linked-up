@@ -18,3 +18,9 @@ test("status explains rescue when a teammate is hanging", () => {
   assert.equal(tetherLabel(0.2), "Linked");
   assert.equal(tetherLabel(0.8), "Stretched");
 });
+
+test("checkpoint reset is announced only when the count advances", () => {
+  const reset = { ...snapshot, resetCount: 2, players: snapshot.players.map((player) => ({ ...player, grounded: true })) };
+  assert.equal(describeGameplayStatus(reset, "blue", 1), "Checkpoint 0 restored");
+  assert.equal(describeGameplayStatus(reset, "blue", 2), "Climb together");
+});

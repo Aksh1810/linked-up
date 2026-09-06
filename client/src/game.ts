@@ -3,6 +3,7 @@ import "@babylonjs/core/Engines/engine";
 import { EngineFactory } from "@babylonjs/core/Engines/engineFactory";
 import "@babylonjs/core/Engines/webgpuEngine";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import type { ArcRotateCameraPointersInput } from "@babylonjs/core/Cameras/Inputs/arcRotateCameraPointersInput";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
@@ -31,6 +32,7 @@ import { obstacleAppearance, obstacleDimensions } from "./world-blockout";
 import { formatCompletionTime } from "./completion";
 import { describeGameplayStatus, tetherLabel } from "./gameplay-status";
 import { controlsHintVisible } from "./controls-hint";
+import { cameraSettings, readUiPreferences, type UiPreferences } from "./ui-preferences";
 
 interface RobotVisual {
   root: TransformNode;
@@ -71,6 +73,9 @@ export class Game {
   readonly #headings = new Map<PlayerId, number>();
   readonly #animationTimes = new Map<PlayerId, number>();
   readonly #snapshots = new SnapshotBuffer();
+  readonly #reducedMotion: MediaQueryList;
+  readonly #uiEvents = new AbortController();
+  #preferences: UiPreferences;
   #snapshot?: ServerSnapshot;
   #predictor?: PredictionReconciler;
   #tickRate?: number;
@@ -82,6 +87,8 @@ export class Game {
   #welcomed = false;
   #ready = false;
   #completed = false;
+  #settingsOpen = false;
+  #lastResetCount = 0;
 
   static async create(canvas: HTMLCanvasElement, options: GameOptions): Promise<Game> {
     const engine = await EngineFactory.CreateAsync(canvas, {
@@ -94,6 +101,8 @@ export class Game {
   private constructor(canvas: HTMLCanvasElement, engine: AbstractEngine, options: GameOptions) {
     this.#engine = engine;
     this.#options = options;
+    this.#reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    this.#preferences = readUiPreferences(window.localStorage);
     this.#scene = new Scene(engine);
     this.#scene.clearColor = Color4.FromHexString("#86c4d4ff");
     this.#scene.fogMode = Scene.FOGMODE_EXP2;
@@ -114,15 +123,11 @@ export class Game {
     this.#camera.upperBetaLimit = 1.38;
     this.#camera.lowerRadiusLimit = 10;
     this.#camera.upperRadiusLimit = 22;
-    this.#camera.inertia = 0.82;
     this.#camera.panningSensibility = 0;
     this.#camera.wheelPrecision = 60;
     this.#camera.attachControl(canvas, true);
-    const resetCamera = document.querySelector<HTMLButtonElement>("#camera-reset");
-    resetCamera?.addEventListener("click", () => {
-      this.#camera.alpha = -Math.PI / 2 - 0.42;
-      this.#camera.beta = 1.18;
-    });
+    this.#applyCameraPreferences();
+    this.#bindSettings(canvas);
     const controlsHint = document.querySelector<HTMLElement>("#controls-hint");
     if (controlsHint && controlsHintVisible(window.localStorage)) {
       controlsHint.addEventListener("click", () => {
@@ -188,11 +193,83 @@ export class Game {
 
   dispose(): void {
     window.removeEventListener("resize", this.#resize);
+    this.#uiEvents.abort();
+    this.#reducedMotion.removeEventListener("change", this.#onMotionPreferenceChange);
     this.#connection.dispose();
     this.#input.dispose();
     this.#scene.dispose();
     this.#engine.dispose();
   }
+
+  #bindSettings(canvas: HTMLCanvasElement): void {
+    const panel = document.querySelector<HTMLDialogElement>("#settings-panel");
+    const open = document.querySelector<HTMLButtonElement>("#settings-toggle");
+    const close = document.querySelector<HTMLButtonElement>("#settings-close");
+    const sensitivity = document.querySelector<HTMLSelectElement>("#camera-sensitivity");
+    const invertY = document.querySelector<HTMLInputElement>("#invert-camera");
+    const reset = document.querySelector<HTMLButtonElement>("#camera-reset");
+    const fullscreen = document.querySelector<HTMLButtonElement>("#fullscreen-toggle");
+    if (!panel || !open || !close || !sensitivity || !invertY || !reset || !fullscreen) {
+      throw new Error("Missing gameplay settings");
+    }
+
+    sensitivity.value = this.#preferences.cameraSensitivity;
+    invertY.checked = this.#preferences.invertY;
+    const save = (): void => {
+      this.#preferences = {
+        cameraSensitivity: sensitivity.value as UiPreferences["cameraSensitivity"],
+        invertY: invertY.checked,
+      };
+      window.localStorage.setItem("linked-up.ui-preferences", JSON.stringify(this.#preferences));
+      this.#applyCameraPreferences();
+    };
+    const finishSettings = (): void => {
+      this.#settingsOpen = false;
+      this.#camera.attachControl(canvas, true);
+      canvas.focus();
+    };
+    const updateFullscreenLabel = (): void => {
+      fullscreen.textContent = document.fullscreenElement ? "Exit fullscreen" : "Enter fullscreen";
+    };
+
+    open.addEventListener("click", () => {
+      this.#settingsOpen = true;
+      this.#camera.detachControl();
+      panel.showModal();
+    }, { signal: this.#uiEvents.signal });
+    close.addEventListener("click", () => panel.close(), { signal: this.#uiEvents.signal });
+    panel.addEventListener("close", finishSettings, { signal: this.#uiEvents.signal });
+    sensitivity.addEventListener("change", save, { signal: this.#uiEvents.signal });
+    invertY.addEventListener("change", save, { signal: this.#uiEvents.signal });
+    reset.addEventListener("click", () => {
+      this.#camera.alpha = -Math.PI / 2 - 0.42;
+      this.#camera.beta = 1.18;
+      this.#camera.radius = 16.5;
+    }, { signal: this.#uiEvents.signal });
+    fullscreen.addEventListener("click", async () => {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+      } catch {
+        this.#options.onStatus("Fullscreen is unavailable");
+      }
+    }, { signal: this.#uiEvents.signal });
+    document.addEventListener("fullscreenchange", updateFullscreenLabel, { signal: this.#uiEvents.signal });
+    this.#reducedMotion.addEventListener("change", this.#onMotionPreferenceChange);
+    updateFullscreenLabel();
+  }
+
+  #applyCameraPreferences(): void {
+    const settings = cameraSettings(this.#preferences, this.#reducedMotion.matches, 0);
+    this.#camera.inertia = settings.inertia;
+    const pointers = this.#camera.inputs.attached.pointers as ArcRotateCameraPointersInput | undefined;
+    if (pointers) {
+      pointers.angularSensibilityX = settings.angularSensibilityX;
+      pointers.angularSensibilityY = settings.angularSensibilityY;
+    }
+  }
+
+  readonly #onMotionPreferenceChange = (): void => this.#applyCameraPreferences();
 
   #createWorld(): void {
     const soil = this.#material("platform-soil", "#4b3831");
@@ -361,6 +438,8 @@ export class Game {
   readonly #onWelcome = (message: WelcomeMessage): void => {
     this.#player = message.player;
     this.#roster = message.players;
+    const playerLabel = document.querySelector<HTMLOutputElement>("#player-label");
+    if (playerLabel) playerLabel.value = `${playerName(message.player)} robot`;
     this.#ensureRoster(message.players);
     this.#tickRate = message.tickRate;
     this.#predictor = new PredictionReconciler(message.player, message.tickRate);
@@ -377,7 +456,10 @@ export class Game {
     const zone = ["Grass", "Construction", "Industrial", "Sky", "Summit"][Math.min(snapshot.checkpoint, 4)];
     this.#routeLabel.value = `${zone} · Checkpoint ${snapshot.checkpoint}`;
     this.#tetherLabel.value = `${tetherLabel(snapshot.tetherTension)} tether`;
-    this.#options.onStatus(describeGameplayStatus(snapshot, this.#player ?? snapshot.players[0].id));
+    this.#options.onStatus(describeGameplayStatus(
+      snapshot, this.#player ?? snapshot.players[0].id, this.#lastResetCount,
+    ));
+    this.#lastResetCount = snapshot.resetCount;
     this.#finishStartup();
   };
 
@@ -410,7 +492,9 @@ export class Game {
       this.#speedLabel.value = `${speed.toFixed(1)} m/s`;
       const target = new Vector3(local.position.x, local.position.y + 0.55, local.position.z);
       this.#camera.setTarget(
-        Vector3.Lerp(this.#camera.target, target, 1 - Math.exp(-8 * delta)),
+        Vector3.Lerp(this.#camera.target, target, cameraSettings(
+          this.#preferences, this.#reducedMotion.matches, delta,
+        ).targetBlend),
       );
       this.#updateTether(sampled?.tetherTension ?? this.#snapshot.tetherTension);
       this.#updateObstacles(sampled?.obstacles ?? this.#snapshot.obstacles);
@@ -429,8 +513,8 @@ export class Game {
       }
     }
 
-    if (!this.#completed && this.#tickRate) this.#inputElapsed += delta;
-    if (!this.#completed && this.#tickRate && this.#inputElapsed >= 1 / this.#tickRate) {
+    if (!this.#completed && !this.#settingsOpen && this.#tickRate) this.#inputElapsed += delta;
+    if (!this.#completed && !this.#settingsOpen && this.#tickRate && this.#inputElapsed >= 1 / this.#tickRate) {
       this.#inputElapsed %= 1 / this.#tickRate;
       const input = this.#input.consume();
       const movement = cameraRelativeMovement(input, this.#camera.alpha);
@@ -499,12 +583,12 @@ export class Game {
     this.#animationTimes.set(state.id, this.#animationTimes.get(state.id)! + delta);
     const runAmount = Math.min(speed / 3.5, 1);
     const animationTime = this.#animationTimes.get(state.id)!;
-    const swing = Math.sin(animationTime * 11) * 0.62 * runAmount;
+    const swing = this.#reducedMotion.matches ? 0 : Math.sin(animationTime * 11) * 0.62 * runAmount;
     robot.leftArm.rotation.x = swing;
     robot.rightArm.rotation.x = -swing;
     robot.leftLeg.rotation.x = -swing * 0.72;
     robot.rightLeg.rotation.x = swing * 0.72;
-    robot.visual.position.y =
+    robot.visual.position.y = this.#reducedMotion.matches ? 0 :
       Math.sin(animationTime * (speed > 0.1 ? 11 : 2.2)) *
       (speed > 0.1 ? 0.035 : 0.025);
     robot.visual.scaling.y = state.grounded ? 1 : 0.94;

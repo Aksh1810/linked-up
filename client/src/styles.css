@@ -178,8 +178,9 @@ canvas {
 }
 
 #game-canvas:focus-visible {
-  outline: 2px solid rgb(244 251 255 / 38%);
-  outline-offset: -4px;
+  outline: 3px solid #f4fbff;
+  outline-offset: -6px;
+  box-shadow: inset 0 0 0 7px #10243a;
 }
 
 .title-plate,
@@ -195,12 +196,43 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
-.controls-hint { margin: 10px 0 0; border: 0; color: #ffcf73; background: transparent; font: 700 .72rem/1.35 inherit; text-align: left; cursor: pointer; }
-.camera-reset { margin-top: 10px; border: 1px solid #8fd9ff; color: #f4fbff; background: transparent; font: 700 .65rem/1 ui-monospace, monospace; padding: 7px 9px; cursor: pointer; }
-.camera-reset:focus-visible, .camera-reset:hover { color: #10243a; background: #f4fbff; }
+.controls-hint {
+  margin: 10px 0 0;
+  min-height: 24px;
+  border: 0;
+  color: #ffcf73;
+  background: transparent;
+  font: 700 .72rem/1.35 inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-toggle,
+.settings-panel button {
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid #8fd9ff;
+  color: #f4fbff;
+  background: transparent;
+  font: 700 .68rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.settings-toggle:hover,
+.settings-panel button:hover {
+  color: #10243a;
+  background: #f4fbff;
+}
 
 .telemetry output { color: #d9edf3; }
 .telemetry #tether-label { color: #ffcf73; }
+
+:where(button, a, select, summary, input):focus-visible {
+  outline: 3px solid #f4fbff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px #10243a;
+}
 
 .slot-picker {
   top: 50%;
@@ -265,7 +297,8 @@ canvas {
 
 .slot-selection .controls,
 .slot-selection .route,
-.slot-selection .telemetry {
+.slot-selection .telemetry,
+.slot-selection .debug-panel {
   display: none;
 }
 
@@ -459,6 +492,108 @@ kbd {
   text-transform: uppercase;
 }
 
+.debug-panel {
+  position: fixed;
+  top: 72px;
+  right: 24px;
+  z-index: 2;
+  min-width: 86px;
+  padding: 7px 10px;
+  color: #d9edf3;
+  background: rgb(16 36 58 / 90%);
+  font: 700 .62rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+}
+
+.debug-panel summary {
+  min-height: 24px;
+  cursor: pointer;
+}
+
+.debug-panel output {
+  display: block;
+  padding-top: 5px;
+  border-top: 1px solid rgb(244 251 255 / 28%);
+}
+
+.settings-panel {
+  width: min(440px, calc(100% - 32px));
+  padding: 24px;
+  border: 2px solid #8fd9ff;
+  color: #f4fbff;
+  background: #10243a;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 45%);
+}
+
+.settings-panel::backdrop {
+  background: rgb(5 17 29 / 70%);
+  backdrop-filter: blur(4px);
+}
+
+.settings-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.settings-heading h2 {
+  margin: 4px 0 0;
+  font-family: "Arial Rounded MT Bold", "Avenir Next Rounded", ui-rounded, sans-serif;
+  font-size: 2rem;
+}
+
+.settings-panel > label:not(.check-setting) {
+  display: block;
+  margin-bottom: 8px;
+  font: 800 .7rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.settings-panel select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #8fd9ff;
+  color: #10243a;
+  background: #f4fbff;
+  font-weight: 700;
+}
+
+.check-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 12px 0;
+  font-weight: 700;
+}
+
+.check-setting input {
+  width: 24px;
+  height: 24px;
+  accent-color: #ff914d;
+}
+
+.settings-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.settings-actions button {
+  min-height: 44px;
+}
+
+.settings-help {
+  margin: 16px 0 0;
+  color: #b9d9e5;
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
 .completion {
   position: fixed;
   inset: 50% auto auto 50%;
@@ -611,11 +746,15 @@ kbd {
 
   .telemetry {
     top: 83px;
+    left: 12px;
     right: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
-  #status-label {
-    display: none;
+  .debug-panel {
+    top: 148px;
+    right: 12px;
   }
 
   #speed-label {
@@ -647,11 +786,20 @@ kbd {
   .title-mark {
     display: none;
   }
+
+  .settings-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .loading,
-  .loading span {
+  .loading span,
+  .completion,
+  .title-plate,
+  .controls,
+  .route,
+  .telemetry {
     transition: none;
     animation: none;
   }
