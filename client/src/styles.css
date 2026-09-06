@@ -195,6 +195,10 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
+.controls-hint { margin: 10px 0 0; border: 0; color: #ffcf73; background: transparent; font: 700 .72rem/1.35 inherit; text-align: left; cursor: pointer; }
+.camera-reset { margin-top: 10px; border: 1px solid #8fd9ff; color: #f4fbff; background: transparent; font: 700 .65rem/1 ui-monospace, monospace; padding: 7px 9px; cursor: pointer; }
+.camera-reset:focus-visible, .camera-reset:hover { color: #10243a; background: #f4fbff; }
+
 .telemetry output { color: #d9edf3; }
 .telemetry #tether-label { color: #ffcf73; }
 

@@ -30,6 +30,7 @@ import { PredictionReconciler, SnapshotBuffer } from "./network-smoothing";
 import { obstacleAppearance, obstacleDimensions } from "./world-blockout";
 import { formatCompletionTime } from "./completion";
 import { describeGameplayStatus, tetherLabel } from "./gameplay-status";
+import { controlsHintVisible } from "./controls-hint";
 
 interface RobotVisual {
   root: TransformNode;
@@ -117,6 +118,18 @@ export class Game {
     this.#camera.panningSensibility = 0;
     this.#camera.wheelPrecision = 60;
     this.#camera.attachControl(canvas, true);
+    const resetCamera = document.querySelector<HTMLButtonElement>("#camera-reset");
+    resetCamera?.addEventListener("click", () => {
+      this.#camera.alpha = -Math.PI / 2 - 0.42;
+      this.#camera.beta = 1.18;
+    });
+    const controlsHint = document.querySelector<HTMLElement>("#controls-hint");
+    if (controlsHint && controlsHintVisible(window.localStorage)) {
+      controlsHint.addEventListener("click", () => {
+        controlsHint.hidden = true;
+        window.localStorage.setItem("linked-up.controls-seen", "1");
+      }, { once: true });
+    } else if (controlsHint) controlsHint.hidden = true;
 
     const sun = new DirectionalLight("sun", new Vector3(-0.55, -1, -0.35), this.#scene);
     sun.position = new Vector3(12, 18, -10);
