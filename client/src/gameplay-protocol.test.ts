@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { encodeInput, parseServerMessage } from "./gameplay-protocol.ts";
-import { obstacleAppearance, obstacleDimensions } from "./world-blockout.ts";
+import { obstacleAppearance, obstacleDimensions, obstaclePresentation } from "./world-blockout.ts";
 
 const blue = {
   id: "blue",
@@ -64,12 +64,25 @@ test("obstacle appearance keeps zone depth while highlighting hazards", () => {
   });
 });
 
+test("hazard presentation distinguishes force volumes, motion, beams, and warnings", () => {
+  assert.deepEqual(obstaclePresentation("fan", "armed", false), {
+    opacity: 0.2, wireframe: true, directional: true, hub: false, warning: false, shake: false,
+  });
+  assert.equal(obstaclePresentation("conveyor", "armed", false).directional, true);
+  assert.equal(obstaclePresentation("movingPlatform", "armed", false).directional, true);
+  assert.equal(obstaclePresentation("rotatingBeam", "armed", false).hub, true);
+  assert.equal(obstaclePresentation("fallingPlatform", "warning", false).warning, true);
+  assert.equal(obstaclePresentation("fallingPlatform", "warning", false).shake, true);
+  assert.equal(obstaclePresentation("fallingPlatform", "warning", true).shake, false);
+});
+
 test("welcome, snapshot, and error messages are validated", () => {
   const welcome = parseServerMessage(
-    '{"type":"welcome","player":"orange","players":["blue","orange"],"tickRate":60,"snapshotRate":20}',
+    '{"type":"welcome","player":"orange","players":["blue","orange"],"tickRate":60,"snapshotRate":20,"mapId":"windworks"}',
   );
   assert.equal(welcome.type, "welcome");
   assert.equal(welcome.player, "orange");
+  assert.equal(welcome.mapId, "windworks");
 
   const snapshot = parseServerMessage(JSON.stringify({
     type: "snapshot",
@@ -106,6 +119,9 @@ test("authoritative snapshots accept a unique two-to-four player roster", () => 
 test("malformed authoritative messages are rejected", () => {
   assert.throws(() => parseServerMessage("not json"));
   assert.throws(() => parseServerMessage('{"type":"snapshot","tick":"bad"}'));
+  assert.throws(() => parseServerMessage(
+    '{"type":"welcome","player":"orange","players":["blue","orange"],"tickRate":60,"snapshotRate":20,"mapId":"unknown"}',
+  ));
   assert.throws(() => parseServerMessage(JSON.stringify({
     type: "snapshot",
     tick: 8,

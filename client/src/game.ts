@@ -28,12 +28,13 @@ import type {
 import { InputController } from "./input";
 import { cameraRelativeMovement } from "./motion";
 import { PredictionReconciler, SnapshotBuffer } from "./network-smoothing";
-import { obstacleAppearance, obstacleDimensions } from "./world-blockout";
+import { obstacleAppearance, obstacleDimensions, obstaclePresentation } from "./world-blockout";
 import { formatCompletionTime } from "./completion";
 import { describeGameplayStatus, tetherLabel } from "./gameplay-status";
 import { controlsHintVisible } from "./controls-hint";
 import { cameraSettings, readUiPreferences, type UiPreferences } from "./ui-preferences";
 import { tetherPath } from "./tether-path";
+import { mapName, type MapId } from "./lobby-state";
 
 interface RobotVisual {
   root: TransformNode;
@@ -42,6 +43,11 @@ interface RobotVisual {
   rightArm: TransformNode;
   leftLeg: TransformNode;
   rightLeg: TransformNode;
+}
+
+interface ObstacleVisual {
+  root: Mesh;
+  warning?: Mesh;
 }
 
 export interface GameOptions {
@@ -63,7 +69,7 @@ export class Game {
   readonly #shadows: ShadowGenerator;
   readonly #input = new InputController();
   readonly #robots = new Map<PlayerId, RobotVisual>();
-  readonly #obstacles = new Map<string, Mesh>();
+  readonly #obstacles = new Map<string, ObstacleVisual>();
   readonly #tether: LinesMesh;
   readonly #connection: GameplayConnection;
   readonly #options: GameOptions;
@@ -81,6 +87,7 @@ export class Game {
   #predictor?: PredictionReconciler;
   #tickRate?: number;
   #player?: PlayerId;
+  #mapId: MapId = "classic-ascent";
   #roster: readonly PlayerId[] = [];
   #sequence = 0;
   #clientTick = 0;
@@ -439,6 +446,7 @@ export class Game {
   readonly #onWelcome = (message: WelcomeMessage): void => {
     this.#player = message.player;
     this.#roster = message.players;
+    this.#mapId = message.mapId;
     const playerLabel = document.querySelector<HTMLOutputElement>("#player-label");
     if (playerLabel) playerLabel.value = `${playerName(message.player)} robot`;
     this.#ensureRoster(message.players);
@@ -455,7 +463,7 @@ export class Game {
     this.#predictor?.reconcile(snapshot);
     this.#tickLabel.value = `Tick ${snapshot.tick}`;
     const zone = ["Grass", "Construction", "Industrial", "Sky", "Summit"][Math.min(snapshot.checkpoint, 4)];
-    this.#routeLabel.value = `${zone} · Checkpoint ${snapshot.checkpoint}`;
+    this.#routeLabel.value = `${mapName(this.#mapId)} · ${zone} · Checkpoint ${snapshot.checkpoint}`;
     this.#tetherLabel.value = `${tetherLabel(snapshot.tetherTension)} tether`;
     this.#options.onStatus(describeGameplayStatus(
       snapshot, this.#player ?? snapshot.players[0].id, this.#lastResetCount,
@@ -544,13 +552,16 @@ export class Game {
 
   #updateObstacles(obstacles: readonly NetworkObstacleState[]): void {
     for (const state of obstacles) {
-      let mesh = this.#obstacles.get(state.id);
-      if (!mesh) {
+      let visual = this.#obstacles.get(state.id);
+      if (!visual) {
         const dimensions = obstacleDimensions(state.halfExtent);
         const appearance = obstacleAppearance(state.zone, state.kind);
-        mesh = MeshBuilder.CreateBox(`obstacle-${state.id}`, dimensions, this.#scene);
+        const presentation = obstaclePresentation(state.kind, state.phase, this.#reducedMotion.matches);
+        const mesh = MeshBuilder.CreateBox(`obstacle-${state.id}`, dimensions, this.#scene);
         const baseMaterial = this.#material(`obstacle-${state.id}-base`, appearance.base);
         baseMaterial.emissiveColor = Color3.FromHexString(appearance.base).scale(0.12);
+        baseMaterial.alpha = presentation.opacity;
+        baseMaterial.wireframe = presentation.wireframe;
         mesh.material = baseMaterial;
         mesh.receiveShadows = true;
         const cap = MeshBuilder.CreateBox(
@@ -559,14 +570,50 @@ export class Game {
           this.#scene,
         );
         cap.position.y = dimensions.height / 2 + 0.04;
-        cap.material = this.#material(`obstacle-${state.id}-top`, appearance.top);
+        const capMaterial = this.#material(`obstacle-${state.id}-top`, appearance.top);
+        capMaterial.alpha = presentation.opacity;
+        cap.material = capMaterial;
         cap.parent = mesh;
         cap.receiveShadows = true;
-        this.#obstacles.set(state.id, mesh);
+        if (presentation.directional) {
+          for (const [index, offset] of [-0.5, 0, 0.5].entries()) {
+            const stripe = MeshBuilder.CreateBox(`obstacle-${state.id}-direction-${index}`, {
+              width: Math.max(0.18, dimensions.width * 0.62), height: 0.09,
+              depth: Math.max(0.1, Math.min(0.22, dimensions.depth * 0.12)),
+            }, this.#scene);
+            stripe.position.set(0, dimensions.height / 2 + 0.1, offset * dimensions.depth);
+            stripe.material = this.#material(`obstacle-${state.id}-direction-${index}-material`, "#effcff", "#8feaff");
+            stripe.parent = mesh;
+          }
+        }
+        if (presentation.hub) {
+          const hub = MeshBuilder.CreateCylinder(`obstacle-${state.id}-hub`, {
+            diameter: Math.max(0.3, Math.min(dimensions.width, dimensions.depth) * 0.45),
+            height: dimensions.height + 0.18, tessellation: 16,
+          }, this.#scene);
+          hub.material = this.#material(`obstacle-${state.id}-hub-material`, "#26394a", "#ff914d");
+          hub.parent = mesh;
+        }
+        let warning: Mesh | undefined;
+        if (state.kind === "fallingPlatform") {
+          warning = MeshBuilder.CreateBox(`obstacle-${state.id}-warning`, {
+            width: 0.42, height: 0.42, depth: 0.12,
+          }, this.#scene);
+          warning.position.set(0, dimensions.height / 2 + 0.45, 0);
+          warning.rotation.z = Math.PI / 4;
+          warning.material = this.#material(`obstacle-${state.id}-warning-material`, "#fff4d6", "#ff914d");
+          warning.parent = mesh;
+          warning.setEnabled(false);
+        }
+        visual = { root: mesh, warning };
+        this.#obstacles.set(state.id, visual);
       }
-      mesh.position.set(state.position.x, state.position.y, state.position.z);
-      mesh.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
-      mesh.isVisible = state.phase !== "falling" || state.position.y > -12;
+      const presentation = obstaclePresentation(state.kind, state.phase, this.#reducedMotion.matches);
+      const shake = presentation.shake ? Math.sin(performance.now() * 0.035) * 0.045 : 0;
+      visual.root.position.set(state.position.x + shake, state.position.y, state.position.z);
+      visual.root.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
+      visual.root.isVisible = state.phase !== "falling" || state.position.y > -12;
+      visual.warning?.setEnabled(presentation.warning);
     }
   }
 

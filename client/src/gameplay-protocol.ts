@@ -1,3 +1,5 @@
+import { isMapId, type MapId } from "./lobby-state.ts";
+
 export type PlayerId = "blue" | "orange" | "green" | "purple";
 
 export interface Vector3State {
@@ -20,6 +22,7 @@ export interface WelcomeMessage {
   players: readonly PlayerId[];
   tickRate: number;
   snapshotRate: number;
+  mapId: MapId;
 }
 
 export interface ServerSnapshot {
@@ -83,10 +86,13 @@ export function parseServerMessage(message: string, expectedRoster?: readonly Pl
   if (!record(value) || typeof value.type !== "string") invalid();
 
   if (value.type === "welcome") {
-    if (!keys(value, ["type", "player", "players", "tickRate", "snapshotRate"])
+    if (!keys(value, ["type", "player", "players", "tickRate", "snapshotRate", "mapId"])
       || !playerId(value.player) || !roster(value.players) || !value.players.includes(value.player)
-      || !count(value.tickRate) || !count(value.snapshotRate)) invalid();
-    return { type: "welcome", player: value.player, players: value.players, tickRate: value.tickRate, snapshotRate: value.snapshotRate };
+      || !count(value.tickRate) || !count(value.snapshotRate) || !isMapId(value.mapId)) invalid();
+    return {
+      type: "welcome", player: value.player, players: value.players,
+      tickRate: value.tickRate, snapshotRate: value.snapshotRate, mapId: value.mapId,
+    };
   }
 
   if (value.type === "error") {

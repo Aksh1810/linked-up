@@ -24,3 +24,28 @@ export function obstacleAppearance(
   };
   return { base: zones[zone].base, top: hazards[kind] ?? zones[zone].top };
 }
+
+export interface ObstaclePresentation {
+  opacity: number;
+  wireframe: boolean;
+  directional: boolean;
+  hub: boolean;
+  warning: boolean;
+  shake: boolean;
+}
+
+export function obstaclePresentation(
+  kind: NetworkObstacleState["kind"],
+  phase: NetworkObstacleState["phase"],
+  reducedMotion: boolean,
+): ObstaclePresentation {
+  const warning = kind === "fallingPlatform" && phase === "warning";
+  return {
+    opacity: kind === "fan" ? 0.2 : kind === "conveyor" ? 0.32 : 1,
+    wireframe: kind === "fan",
+    directional: kind === "fan" || kind === "conveyor" || kind === "movingPlatform",
+    hub: kind === "rotatingBeam",
+    warning,
+    shake: warning && !reducedMotion,
+  };
+}
