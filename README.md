@@ -14,9 +14,9 @@ The repository currently contains the Phase 9 local gameplay slice:
   Blue, Orange, Green, and Purple robots, at 60 Hz with snapshots at 20 Hz;
 - a browser countdown and direct authenticated WebSocket handoff, with local
   prediction and authoritative smoothing for the dynamic roster.
-- one authoritative five-zone blockout route—Grass, Construction, Industrial,
-  Sky, and Summit—with 35 low-poly obstacles, four team checkpoints, and
-  server-owned geometry descriptors for browser rendering.
+- four authoritative five-zone blockout routes—Classic Ascent, Relay Ridge,
+  Crane Shift, and Windworks—with four team checkpoints each and server-owned
+  geometry descriptors for browser rendering.
 
 ## Architecture
 
@@ -81,8 +81,9 @@ npm --prefix client run dev -- --host 127.0.0.1
 Open `http://127.0.0.1:5173/`, choose 2–4 players, and create a room. Use Copy
 Invite Link to share the `http://127.0.0.1:5173/room/CODE` URL; each browser
 that opens it joins the room and receives live membership and host updates without reloads.
-Only the host can start once every slot is filled. Starting currently ends at
-an in-memory C++ match assignment. Each subscribed player receives its own
+Only the host can choose the map while the room is waiting or start once every
+slot is filled; guests see map changes live but cannot edit the selection.
+Starting creates an in-memory C++ match using the selected authored route. Each subscribed player receives its own
 private `MatchReady` launch, sees `3`, `2`, `1`, `CLIMB!`, then connects
 directly to the authoritative server.
 
