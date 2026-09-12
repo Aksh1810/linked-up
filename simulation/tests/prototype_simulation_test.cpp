@@ -43,6 +43,23 @@ std::size_t obstacle_count(const Config& config, ObstacleKind kind) {
       [kind](const ObstacleConfig& obstacle) { return obstacle.kind == kind; }));
 }
 
+bool overlaps(const ObstacleConfig& left, const ObstacleConfig& right) {
+  return std::abs(left.origin.x - right.origin.x) < left.half_extent.x + right.half_extent.x &&
+         std::abs(left.origin.y - right.origin.y) < left.half_extent.y + right.half_extent.y &&
+         std::abs(left.origin.z - right.origin.z) < left.half_extent.z + right.half_extent.z;
+}
+
+std::size_t overlapping_force_pairs(const Config& config) {
+  std::size_t count = 0;
+  for (const auto& fan : config.obstacles) {
+    if (fan.kind != ObstacleKind::Fan) continue;
+    for (const auto& conveyor : config.obstacles) {
+      if (conveyor.kind == ObstacleKind::Conveyor && overlaps(fan, conveyor)) ++count;
+    }
+  }
+  return count;
+}
+
 void assert_route_basics(const Config& config, std::string_view prefix,
                          std::size_t minimum, std::size_t maximum) {
   assert(config.checkpoints.size() == 4);
@@ -55,9 +72,14 @@ void assert_route_basics(const Config& config, std::string_view prefix,
     assert(obstacle.id.starts_with(prefix));
     assert(ids.insert(obstacle.id).second);
     zones.insert(obstacle.zone);
+    assert(obstacle.half_extent.x > 0.0f && obstacle.half_extent.y > 0.0f &&
+           obstacle.half_extent.z > 0.0f);
+    assert(finite(obstacle.origin) && finite(obstacle.travel));
+    assert(obstacle.period_ticks > 0.0f);
   }
   assert(zones.size() == 5);
   for (const auto& checkpoint : config.checkpoints) {
+    assert(checkpoint.spawn_positions.size() == 4);
     for (const auto& spawn : checkpoint.spawn_positions) {
       assert(std::abs(spawn.x - checkpoint.volume.center.x) <= checkpoint.volume.half_extent.x);
       assert(std::abs(spawn.y - checkpoint.volume.center.y) <= checkpoint.volume.half_extent.y);
@@ -504,6 +526,7 @@ void authored_route_registry_enforces_each_maps_composition() {
   assert(obstacle_count(wind, ObstacleKind::Fan) <= 4);
   assert(obstacle_count(wind, ObstacleKind::Conveyor) >= 2);
   assert(obstacle_count(wind, ObstacleKind::Conveyor) <= 3);
+  assert(overlapping_force_pairs(wind) == 1);
   assert(obstacle_count(wind, ObstacleKind::SwingingBeam) == 0);
 
   bool rejected = false;
