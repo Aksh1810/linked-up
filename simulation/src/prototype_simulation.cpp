@@ -225,11 +225,184 @@ Config default_route_config() {
   return config;
 }
 
+namespace {
+
+std::array<Vec3, 4> checkpoint_spawns(float y, float z) {
+  return {{{-1.0f, y, z}, {1.0f, y, z}, {-3.0f, y, z}, {3.0f, y, z}}};
+}
+
+Config relay_ridge_config() {
+  Config config;
+  config.platform_half_extent = 8.0f;
+  config.fail_height = -24.0f;
+  config.checkpoints = {
+      {{{0.0f, 9.8f, 29.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(9.8f, 29.0f)},
+      {{{0.0f, 20.2f, 65.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(20.2f, 65.0f)},
+      {{{0.0f, 30.4f, 101.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(30.4f, 101.0f)},
+      {{{0.0f, 40.8f, 137.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(40.8f, 137.0f)},
+  };
+  config.summit = {{0.0f, 46.2f, 155.0f}, {5.0f, 2.0f, 4.0f}};
+  config.obstacles = {
+      {"relay-grass-step-1", ObstacleKind::StaticPlatform, {-1.5f, 1.8f, 5.0f}, {4.5f, 0.4f, 3.0f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"relay-grass-rescue", ObstacleKind::StaticPlatform, {3.5f, 1.0f, 9.0f}, {2.0f, 0.3f, 2.0f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"relay-grass-step-2", ObstacleKind::StaticPlatform, {1.5f, 3.6f, 11.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"relay-grass-elevator", ObstacleKind::MovingPlatform, {-1.5f, 5.0f, 17.0f}, {2.8f, 0.35f, 2.5f}, {0.0f, 1.2f, 0.0f}, 210.0f, 0.0f, Zone::Grass},
+      {"relay-grass-step-3", ObstacleKind::StaticPlatform, {1.5f, 7.0f, 23.0f}, {4.2f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"relay-grass-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 8.4f, 29.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+
+      {"relay-construction-entry", ObstacleKind::StaticPlatform, {-2.0f, 10.0f, 35.0f}, {3.3f, 0.4f, 2.3f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"relay-construction-shuttle-left", ObstacleKind::MovingPlatform, {-2.5f, 11.6f, 41.0f}, {2.3f, 0.35f, 2.1f}, {4.0f, 0.0f, 0.0f}, 190.0f, 0.0f, Zone::Construction},
+      {"relay-construction-pad-left", ObstacleKind::StaticPlatform, {-3.0f, 13.0f, 47.0f}, {2.8f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"relay-construction-shuttle-right", ObstacleKind::MovingPlatform, {2.5f, 14.4f, 53.0f}, {2.3f, 0.35f, 2.1f}, {-4.0f, 0.0f, 0.0f}, 190.0f, 0.0f, Zone::Construction},
+      {"relay-construction-pad-right", ObstacleKind::StaticPlatform, {3.0f, 15.8f, 57.0f}, {2.8f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"relay-construction-pair-left", ObstacleKind::MovingPlatform, {-3.5f, 17.0f, 61.0f}, {2.0f, 0.35f, 1.8f}, {3.0f, 0.0f, 0.0f}, 220.0f, 0.0f, Zone::Construction},
+      {"relay-construction-pair-right", ObstacleKind::MovingPlatform, {3.5f, 17.0f, 61.0f}, {2.0f, 0.35f, 1.8f}, {-3.0f, 0.0f, 0.0f}, 220.0f, 0.0f, Zone::Construction},
+      {"relay-construction-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 18.8f, 65.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+
+      {"relay-industrial-entry", ObstacleKind::StaticPlatform, {0.0f, 20.8f, 71.0f}, {4.2f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"relay-industrial-belt-base", ObstacleKind::StaticPlatform, {0.0f, 22.4f, 77.0f}, {4.8f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"relay-industrial-belt", ObstacleKind::Conveyor, {0.0f, 23.8f, 77.0f}, {4.8f, 1.2f, 2.5f}, {1.0f, 0.0f, 0.0f}, 60.0f, 2.0f, Zone::Industrial},
+      {"relay-industrial-shelter", ObstacleKind::StaticPlatform, {-2.0f, 24.0f, 83.0f}, {3.2f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"relay-industrial-fan-floor", ObstacleKind::StaticPlatform, {1.0f, 25.6f, 89.0f}, {4.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"relay-industrial-fan", ObstacleKind::Fan, {1.0f, 27.0f, 89.0f}, {4.5f, 1.3f, 2.5f}, {-1.0f, 0.0f, 0.0f}, 60.0f, 9.0f, Zone::Industrial},
+      {"relay-industrial-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 29.0f, 101.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+
+      {"relay-sky-rock-1", ObstacleKind::StaticPlatform, {-2.0f, 31.0f, 107.0f}, {2.8f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"relay-sky-rescue-1", ObstacleKind::StaticPlatform, {3.5f, 29.8f, 108.0f}, {1.8f, 0.3f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"relay-sky-rock-2", ObstacleKind::StaticPlatform, {1.5f, 32.8f, 113.0f}, {3.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"relay-sky-fall-1", ObstacleKind::FallingPlatform, {-2.0f, 34.4f, 119.0f}, {2.0f, 0.3f, 2.0f}, {}, 150.0f, 6.0f, Zone::Sky},
+      {"relay-sky-anchor", ObstacleKind::StaticPlatform, {2.5f, 34.4f, 119.0f}, {2.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"relay-sky-fall-2", ObstacleKind::FallingPlatform, {1.5f, 36.0f, 125.0f}, {2.0f, 0.3f, 2.0f}, {}, 150.0f, 6.0f, Zone::Sky},
+      {"relay-sky-regroup", ObstacleKind::StaticPlatform, {-1.5f, 37.0f, 129.0f}, {3.8f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"relay-sky-mover", ObstacleKind::MovingPlatform, {2.0f, 38.2f, 133.0f}, {2.3f, 0.35f, 2.0f}, {-3.0f, 0.0f, 0.0f}, 210.0f, 0.0f, Zone::Sky},
+      {"relay-sky-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 39.4f, 137.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Sky},
+
+      {"relay-summit-entry", ObstacleKind::StaticPlatform, {-1.5f, 40.8f, 142.0f}, {3.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"relay-summit-step-1", ObstacleKind::StaticPlatform, {1.5f, 42.2f, 147.0f}, {3.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"relay-summit-step-2", ObstacleKind::StaticPlatform, {-1.0f, 43.6f, 151.0f}, {3.8f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"relay-summit-finish", ObstacleKind::StaticPlatform, {0.0f, 44.8f, 155.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+  };
+  return config;
+}
+
+Config crane_shift_config() {
+  Config config;
+  config.platform_half_extent = 8.0f;
+  config.fail_height = -24.0f;
+  config.checkpoints = {
+      {{{0.0f, 9.8f, 29.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(9.8f, 29.0f)},
+      {{{0.0f, 20.2f, 65.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(20.2f, 65.0f)},
+      {{{0.0f, 30.4f, 101.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(30.4f, 101.0f)},
+      {{{0.0f, 40.8f, 137.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(40.8f, 137.0f)},
+  };
+  config.summit = {{0.0f, 46.2f, 155.0f}, {5.0f, 2.0f, 4.0f}};
+  config.obstacles = {
+      {"crane-grass-step-1", ObstacleKind::StaticPlatform, {0.0f, 1.8f, 5.0f}, {4.5f, 0.4f, 3.0f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"crane-grass-shuttle", ObstacleKind::MovingPlatform, {-2.5f, 3.4f, 11.0f}, {2.8f, 0.35f, 2.4f}, {5.0f, 0.0f, 0.0f}, 240.0f, 0.0f, Zone::Grass},
+      {"crane-grass-rescue", ObstacleKind::StaticPlatform, {0.0f, 2.2f, 13.0f}, {5.0f, 0.3f, 1.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"crane-grass-pad", ObstacleKind::StaticPlatform, {2.0f, 5.2f, 17.0f}, {3.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"crane-grass-step-2", ObstacleKind::StaticPlatform, {-1.5f, 7.0f, 23.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"crane-grass-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 8.4f, 29.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+
+      {"crane-construction-entry", ObstacleKind::StaticPlatform, {-2.0f, 10.0f, 35.0f}, {3.2f, 0.4f, 2.3f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"crane-construction-elevator", ObstacleKind::MovingPlatform, {-2.0f, 11.2f, 41.0f}, {2.8f, 0.35f, 2.2f}, {0.0f, 1.8f, 0.0f}, 220.0f, 0.0f, Zone::Construction},
+      {"crane-construction-elevator-pad", ObstacleKind::StaticPlatform, {-2.0f, 14.0f, 47.0f}, {3.2f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"crane-construction-shuttle-left", ObstacleKind::MovingPlatform, {-3.5f, 15.4f, 53.0f}, {2.2f, 0.35f, 2.0f}, {4.5f, 0.0f, 0.0f}, 210.0f, 0.0f, Zone::Construction},
+      {"crane-construction-shuttle-right", ObstacleKind::MovingPlatform, {3.5f, 15.4f, 53.0f}, {2.2f, 0.35f, 2.0f}, {-4.5f, 0.0f, 0.0f}, 210.0f, 0.0f, Zone::Construction},
+      {"crane-construction-left-pad", ObstacleKind::StaticPlatform, {-3.0f, 17.0f, 59.0f}, {2.8f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"crane-construction-right-pad", ObstacleKind::StaticPlatform, {3.0f, 17.0f, 59.0f}, {2.8f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"crane-construction-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 18.8f, 65.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+
+      {"crane-industrial-entry", ObstacleKind::StaticPlatform, {0.0f, 20.8f, 71.0f}, {4.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-deck-1", ObstacleKind::StaticPlatform, {-1.5f, 22.4f, 77.0f}, {4.8f, 0.4f, 2.6f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-beam-1", ObstacleKind::RotatingBeam, {-1.5f, 23.3f, 77.0f}, {3.5f, 0.2f, 0.25f}, {}, 240.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-refuge", ObstacleKind::StaticPlatform, {2.5f, 24.0f, 83.0f}, {2.5f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-deck-2", ObstacleKind::StaticPlatform, {0.0f, 25.6f, 89.0f}, {5.0f, 0.4f, 2.6f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-beam-2", ObstacleKind::RotatingBeam, {0.0f, 26.5f, 89.0f}, {3.6f, 0.2f, 0.25f}, {}, 260.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-regroup", ObstacleKind::StaticPlatform, {-1.0f, 27.4f, 95.0f}, {4.3f, 0.4f, 2.4f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"crane-industrial-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 29.0f, 101.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+
+      {"crane-sky-entry", ObstacleKind::StaticPlatform, {-2.0f, 31.0f, 107.0f}, {3.2f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"crane-sky-link-1", ObstacleKind::MovingPlatform, {-3.0f, 32.2f, 112.0f}, {2.3f, 0.35f, 2.0f}, {3.5f, 1.0f, 0.0f}, 240.0f, 0.0f, Zone::Sky},
+      {"crane-sky-pad-1", ObstacleKind::StaticPlatform, {2.0f, 33.8f, 117.0f}, {2.8f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"crane-sky-link-2", ObstacleKind::MovingPlatform, {3.0f, 35.0f, 122.0f}, {2.3f, 0.35f, 2.0f}, {-3.5f, 1.0f, 0.0f}, 240.0f, 0.0f, Zone::Sky},
+      {"crane-sky-pad-2", ObstacleKind::StaticPlatform, {-2.0f, 36.2f, 127.0f}, {2.8f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"crane-sky-link-3", ObstacleKind::MovingPlatform, {-3.0f, 37.0f, 131.0f}, {2.3f, 0.35f, 2.0f}, {3.5f, 1.0f, 0.0f}, 240.0f, 0.0f, Zone::Sky},
+      {"crane-sky-crew-island", ObstacleKind::StaticPlatform, {1.0f, 38.2f, 134.0f}, {4.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"crane-sky-final-pad", ObstacleKind::StaticPlatform, {-1.0f, 39.0f, 136.0f}, {3.5f, 0.4f, 1.8f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"crane-sky-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 39.4f, 137.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Sky},
+
+      {"crane-summit-entry", ObstacleKind::StaticPlatform, {0.0f, 41.0f, 142.0f}, {5.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"crane-summit-beam", ObstacleKind::RotatingBeam, {-1.5f, 41.9f, 142.0f}, {3.0f, 0.2f, 0.25f}, {}, 280.0f, 0.0f, Zone::Summit},
+      {"crane-summit-bypass", ObstacleKind::StaticPlatform, {4.0f, 42.0f, 145.0f}, {1.8f, 0.4f, 3.0f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"crane-summit-step", ObstacleKind::StaticPlatform, {1.0f, 43.4f, 150.0f}, {4.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"crane-summit-finish", ObstacleKind::StaticPlatform, {0.0f, 44.8f, 155.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+  };
+  return config;
+}
+
+Config windworks_config() {
+  Config config;
+  config.platform_half_extent = 8.0f;
+  config.fail_height = -24.0f;
+  config.checkpoints = {
+      {{{0.0f, 9.8f, 29.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(9.8f, 29.0f)},
+      {{{0.0f, 20.2f, 65.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(20.2f, 65.0f)},
+      {{{0.0f, 30.4f, 101.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(30.4f, 101.0f)},
+      {{{0.0f, 40.8f, 137.0f}, {5.0f, 2.0f, 4.0f}}, checkpoint_spawns(40.8f, 137.0f)},
+  };
+  config.summit = {{0.0f, 46.2f, 155.0f}, {5.0f, 2.0f, 4.0f}};
+  config.obstacles = {
+      {"wind-grass-floor", ObstacleKind::StaticPlatform, {0.0f, 1.8f, 6.0f}, {5.0f, 0.4f, 4.0f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"wind-grass-fan", ObstacleKind::Fan, {0.0f, 3.2f, 6.0f}, {5.0f, 1.3f, 4.0f}, {1.0f, 0.0f, 0.0f}, 60.0f, 6.0f, Zone::Grass},
+      {"wind-grass-refuge", ObstacleKind::StaticPlatform, {-2.5f, 3.6f, 13.0f}, {2.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"wind-grass-step-2", ObstacleKind::StaticPlatform, {1.5f, 5.2f, 18.0f}, {3.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"wind-grass-step-3", ObstacleKind::StaticPlatform, {-1.0f, 7.0f, 23.0f}, {4.2f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+      {"wind-grass-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 8.4f, 29.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Grass},
+
+      {"wind-construction-entry", ObstacleKind::StaticPlatform, {-1.0f, 10.0f, 35.0f}, {4.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"wind-construction-fan-floor", ObstacleKind::StaticPlatform, {0.0f, 11.6f, 41.0f}, {5.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"wind-construction-fan", ObstacleKind::Fan, {0.0f, 13.0f, 41.0f}, {5.0f, 1.3f, 2.5f}, {-1.0f, 0.0f, 0.0f}, 60.0f, 9.0f, Zone::Construction},
+      {"wind-construction-shelter-1", ObstacleKind::StaticPlatform, {-3.0f, 13.2f, 47.0f}, {2.2f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"wind-construction-shelter-2", ObstacleKind::StaticPlatform, {3.0f, 14.8f, 53.0f}, {2.2f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"wind-construction-bay", ObstacleKind::StaticPlatform, {0.0f, 16.0f, 57.0f}, {4.8f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"wind-construction-step", ObstacleKind::StaticPlatform, {-1.0f, 17.4f, 61.0f}, {4.0f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Construction},
+      {"wind-construction-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 18.8f, 65.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Construction},
+
+      {"wind-industrial-entry", ObstacleKind::StaticPlatform, {0.0f, 20.8f, 71.0f}, {4.5f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"wind-industrial-belt-base-1", ObstacleKind::StaticPlatform, {0.0f, 22.4f, 77.0f}, {4.8f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"wind-industrial-belt-1", ObstacleKind::Conveyor, {0.0f, 23.8f, 77.0f}, {4.8f, 1.2f, 2.5f}, {1.0f, 0.0f, 0.0f}, 60.0f, 2.5f, Zone::Industrial},
+      {"wind-industrial-refuge", ObstacleKind::StaticPlatform, {-2.0f, 24.0f, 83.0f}, {3.0f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"wind-industrial-belt-base-2", ObstacleKind::StaticPlatform, {0.0f, 25.6f, 89.0f}, {4.8f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"wind-industrial-belt-2", ObstacleKind::Conveyor, {0.0f, 27.0f, 89.0f}, {4.8f, 1.2f, 2.5f}, {-1.0f, 0.0f, 0.0f}, 60.0f, 2.5f, Zone::Industrial},
+      {"wind-industrial-regroup", ObstacleKind::StaticPlatform, {1.0f, 27.4f, 95.0f}, {4.2f, 0.4f, 2.4f}, {}, 60.0f, 0.0f, Zone::Industrial},
+      {"wind-industrial-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 29.0f, 101.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Industrial},
+
+      {"wind-sky-entry", ObstacleKind::StaticPlatform, {-1.5f, 31.0f, 107.0f}, {3.5f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"wind-sky-combo-base", ObstacleKind::StaticPlatform, {0.0f, 32.6f, 113.0f}, {5.0f, 0.4f, 2.5f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"wind-sky-combo-belt", ObstacleKind::Conveyor, {0.0f, 34.0f, 113.0f}, {5.0f, 1.2f, 2.5f}, {0.0f, 0.0f, 1.0f}, 60.0f, 1.8f, Zone::Sky},
+      {"wind-sky-combo-crosswind", ObstacleKind::Fan, {0.0f, 34.0f, 113.0f}, {5.0f, 1.3f, 2.5f}, {1.0f, 0.0f, 0.0f}, 60.0f, 7.0f, Zone::Sky},
+      {"wind-sky-leeward-1", ObstacleKind::StaticPlatform, {-3.0f, 34.6f, 119.0f}, {2.2f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"wind-sky-link", ObstacleKind::StaticPlatform, {2.0f, 36.2f, 125.0f}, {3.0f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"wind-sky-leeward-2", ObstacleKind::StaticPlatform, {-1.5f, 37.8f, 131.0f}, {3.5f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Sky},
+      {"wind-sky-checkpoint", ObstacleKind::StaticPlatform, {0.0f, 39.4f, 137.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Sky},
+
+      {"wind-summit-gust-floor", ObstacleKind::StaticPlatform, {0.0f, 41.0f, 143.0f}, {5.2f, 0.4f, 3.0f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"wind-summit-gust", ObstacleKind::Fan, {0.0f, 42.4f, 143.0f}, {5.2f, 1.3f, 3.0f}, {-1.0f, 0.0f, 0.0f}, 60.0f, 8.0f, Zone::Summit},
+      {"wind-summit-refuge", ObstacleKind::StaticPlatform, {0.0f, 42.8f, 148.0f}, {2.2f, 0.4f, 2.0f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"wind-summit-step", ObstacleKind::StaticPlatform, {1.0f, 43.8f, 151.0f}, {3.8f, 0.4f, 2.2f}, {}, 60.0f, 0.0f, Zone::Summit},
+      {"wind-summit-finish", ObstacleKind::StaticPlatform, {0.0f, 44.8f, 155.0f}, {5.0f, 0.4f, 3.5f}, {}, 60.0f, 0.0f, Zone::Summit},
+  };
+  return config;
+}
+
+}  // namespace
+
 Config route_config(std::string_view map_id) {
-  if (map_id == "classic-ascent" || map_id == "relay-ridge" || map_id == "crane-shift" ||
-      map_id == "windworks") {
-    return default_route_config();
-  }
+  if (map_id == "classic-ascent") return default_route_config();
+  if (map_id == "relay-ridge") return relay_ridge_config();
+  if (map_id == "crane-shift") return crane_shift_config();
+  if (map_id == "windworks") return windworks_config();
   throw std::invalid_argument("unknown map id");
 }
 
@@ -497,6 +670,7 @@ class PrototypeSimulation::Impl {
           break;
         case ObstacleKind::Fan:
         case ObstacleKind::Conveyor:
+          state.rotation.y = std::atan2(obstacle.travel.x, obstacle.travel.z);
           break;
         case ObstacleKind::FallingPlatform:
           if (falling_started_ticks_[states.size()]) {

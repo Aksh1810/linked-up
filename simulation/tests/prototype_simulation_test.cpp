@@ -7,6 +7,7 @@
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -35,6 +36,35 @@ Vec3 subtract(Vec3 left, Vec3 right) {
 }
 
 float length(Vec3 value) { return std::sqrt(dot(value, value)); }
+
+std::size_t obstacle_count(const Config& config, ObstacleKind kind) {
+  return static_cast<std::size_t>(std::count_if(
+      config.obstacles.begin(), config.obstacles.end(),
+      [kind](const ObstacleConfig& obstacle) { return obstacle.kind == kind; }));
+}
+
+void assert_route_basics(const Config& config, std::string_view prefix,
+                         std::size_t minimum, std::size_t maximum) {
+  assert(config.checkpoints.size() == 4);
+  assert(config.obstacles.size() >= minimum && config.obstacles.size() <= maximum);
+  assert(config.summit.half_extent.x > 0.0f && config.summit.half_extent.y > 0.0f &&
+         config.summit.half_extent.z > 0.0f);
+  std::set<std::string> ids;
+  std::set<Zone> zones;
+  for (const auto& obstacle : config.obstacles) {
+    assert(obstacle.id.starts_with(prefix));
+    assert(ids.insert(obstacle.id).second);
+    zones.insert(obstacle.zone);
+  }
+  assert(zones.size() == 5);
+  for (const auto& checkpoint : config.checkpoints) {
+    for (const auto& spawn : checkpoint.spawn_positions) {
+      assert(std::abs(spawn.x - checkpoint.volume.center.x) <= checkpoint.volume.half_extent.x);
+      assert(std::abs(spawn.y - checkpoint.volume.center.y) <= checkpoint.volume.half_extent.y);
+      assert(std::abs(spawn.z - checkpoint.volume.center.z) <= checkpoint.volume.half_extent.z);
+    }
+  }
+}
 
 void two_player_tether_hard_limit_is_authoritative() {
   Config config;
@@ -377,13 +407,14 @@ void fan_force_is_authoritative_and_volume_bound() {
   Config config;
   config.obstacles = {
       {"fan-1", ObstacleKind::Fan, {0.0f, 1.5f, 0.0f}, {5.0f, 2.0f, 5.0f},
-       {0.0f, 0.0f, 1.0f}, 60.0f, 30.0f},
+       {1.0f, 0.0f, 0.0f}, 60.0f, 30.0f},
   };
   PrototypeSimulation simulation({RobotColor::Blue, RobotColor::Orange}, config);
   for (int tick = 0; tick < 30; ++tick) simulation.step();
   const auto state = simulation.snapshot();
-  assert(state.players[0].velocity.z > 0.1f);
-  assert(state.players[1].velocity.z > 0.1f);
+  assert(state.players[0].velocity.x > 0.1f);
+  assert(state.players[1].velocity.x > 0.1f);
+  assert(std::abs(state.obstacles[0].rotation.y - 1.570796f) < 0.001f);
 }
 
 void falling_platform_warns_falls_and_resets() {
@@ -446,6 +477,44 @@ void default_route_covers_all_five_blockout_zones() {
   assert(zones.size() == 5);
 }
 
+void authored_route_registry_enforces_each_maps_composition() {
+  const auto classic = linked_up::route_config("classic-ascent");
+  assert(classic.obstacles.size() == linked_up::default_route_config().obstacles.size());
+
+  const auto relay = linked_up::route_config("relay-ridge");
+  assert_route_basics(relay, "relay-", 32, 38);
+  assert(obstacle_count(relay, ObstacleKind::MovingPlatform) >= 3);
+  assert(obstacle_count(relay, ObstacleKind::Fan) == 1);
+  assert(obstacle_count(relay, ObstacleKind::Conveyor) == 1);
+  assert(obstacle_count(relay, ObstacleKind::FallingPlatform) >= 2);
+  assert(obstacle_count(relay, ObstacleKind::SwingingBeam) == 0);
+
+  const auto crane = linked_up::route_config("crane-shift");
+  assert_route_basics(crane, "crane-", 34, 40);
+  assert(obstacle_count(crane, ObstacleKind::StaticPlatform) * 100 >=
+         crane.obstacles.size() * 45);
+  assert(obstacle_count(crane, ObstacleKind::MovingPlatform) >= 6);
+  assert(obstacle_count(crane, ObstacleKind::RotatingBeam) >= 1);
+  assert(obstacle_count(crane, ObstacleKind::RotatingBeam) <= 3);
+  assert(obstacle_count(crane, ObstacleKind::SwingingBeam) == 0);
+
+  const auto wind = linked_up::route_config("windworks");
+  assert_route_basics(wind, "wind-", 32, 38);
+  assert(obstacle_count(wind, ObstacleKind::Fan) >= 3);
+  assert(obstacle_count(wind, ObstacleKind::Fan) <= 4);
+  assert(obstacle_count(wind, ObstacleKind::Conveyor) >= 2);
+  assert(obstacle_count(wind, ObstacleKind::Conveyor) <= 3);
+  assert(obstacle_count(wind, ObstacleKind::SwingingBeam) == 0);
+
+  bool rejected = false;
+  try {
+    static_cast<void>(linked_up::route_config("unknown"));
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  assert(rejected);
+}
+
 }  // namespace
 
 int main() {
@@ -471,5 +540,6 @@ int main() {
   normal_matches_receive_a_blockout_route();
   default_route_opening_ledge_fits_a_single_jump();
   default_route_covers_all_five_blockout_zones();
+  authored_route_registry_enforces_each_maps_composition();
   std::cout << "authoritative tether checks passed\n";
 }
