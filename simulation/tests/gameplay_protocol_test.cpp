@@ -125,7 +125,8 @@ void roster_aware_server_messages_preserve_authoritative_state() {
 
   const auto welcome = crow::json::load(linked_up::serialize_welcome(
       RobotColor::Orange,
-      {RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple}));
+      {RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple},
+      "windworks"));
   assert(welcome["type"].s() == "welcome");
   assert(welcome["player"].s() == "orange");
   assert(welcome["players"].size() == 4);
@@ -133,6 +134,7 @@ void roster_aware_server_messages_preserve_authoritative_state() {
   assert(welcome["players"][1].s() == "orange");
   assert(welcome["players"][2].s() == "green");
   assert(welcome["players"][3].s() == "purple");
+  assert(welcome["mapId"].s() == "windworks");
   assert(welcome["tickRate"].u() == 60);
   assert(welcome["snapshotRate"].u() == 20);
 

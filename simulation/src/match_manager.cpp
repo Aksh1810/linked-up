@@ -112,6 +112,7 @@ class MatchManager::Impl {
 
   struct Match {
     std::string room_id;
+    std::string map_id;
     std::chrono::system_clock::time_point expires_at;
     std::vector<PlayerState> players;
     std::unique_ptr<PrototypeSimulation> simulation;
@@ -131,18 +132,21 @@ MatchManager::MatchManager(Now now) : impl_(std::make_unique<Impl>(std::move(now
 
 MatchManager::~MatchManager() = default;
 
-CreateMatchResult MatchManager::create(std::string room_id, std::vector<MatchPlayer> players) {
+CreateMatchResult MatchManager::create(
+    std::string room_id, std::string map_id, std::vector<MatchPlayer> players) {
   validate_players(room_id, players);
+  auto config = route_config(map_id);
   std::lock_guard lock(impl_->mutex);
   const auto expires_at = impl_->now() + kTicketLifetime;
   auto match = std::make_unique<Impl::Match>();
   match->room_id = std::move(room_id);
+  match->map_id = std::move(map_id);
   match->expires_at = expires_at;
 
   std::vector<RobotColor> roster;
   roster.reserve(players.size());
   for (const auto& player : players) roster.push_back(player.color);
-  match->simulation = std::make_unique<PrototypeSimulation>(std::move(roster), default_route_config());
+  match->simulation = std::make_unique<PrototypeSimulation>(std::move(roster), std::move(config));
 
   CreateMatchResult result;
   result.match_id = new_match_id();
@@ -174,7 +178,8 @@ std::optional<Admission> MatchManager::admit(std::string_view match_id, std::str
       std::vector<RobotColor> roster;
       roster.reserve(found->second->players.size());
       for (const auto& player : found->second->players) roster.push_back(player.player.color);
-      return Admission{std::string(match_id), state.player.id, state.player.color, std::move(roster)};
+      return Admission{std::string(match_id), state.player.id, state.player.color,
+                       found->second->map_id, std::move(roster)};
     }
   }
   return std::nullopt;

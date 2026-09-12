@@ -19,7 +19,8 @@ message CreateMatchRequest {
   string room_id = 1;
   uint32 capacity = 2;
   repeated Player players = 3;
-  reserved 4 to 15;
+  string map_id = 4;
+  reserved 5 to 15;
 }
 
 message PlayerLaunch {

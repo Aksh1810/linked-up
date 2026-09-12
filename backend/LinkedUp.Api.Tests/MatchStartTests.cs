@@ -257,6 +257,27 @@ public sealed class MatchStartTests : IAsyncLifetime
         Assert.Equal(room.Players.Select(player => player.Id), created.Launches.Select(launch => launch.PlayerId));
     }
 
+    [Fact]
+    public async Task Create_match_sends_the_selected_room_map()
+    {
+        var room = FullRoom();
+        room.SetMap(new string('a', 64), RoomMaps.Windworks);
+        CreateMatchRequest? sent = null;
+        var client = new SimulationMatchClient(
+            (request, _) =>
+            {
+                sent = request;
+                return Task.FromResult(ValidResponse(request));
+            },
+            (_, _) => Task.CompletedTask,
+            TimeProvider.System,
+            NullLogger<SimulationMatchClient>.Instance);
+
+        await client.CreateMatchAsync(room, CancellationToken.None);
+
+        Assert.Equal(RoomMaps.Windworks, sent!.MapId);
+    }
+
     [Theory]
     [InlineData("expired")]
     [InlineData("wrong-player")]

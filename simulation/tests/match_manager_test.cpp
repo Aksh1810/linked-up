@@ -69,6 +69,7 @@ CreateMatchRequest service_request_for(std::initializer_list<const char*> colors
   CreateMatchRequest request;
   request.set_room_id("00000000-0000-4000-8000-000000000001");
   request.set_capacity(static_cast<std::uint32_t>(colors.size()));
+  request.set_map_id("classic-ascent");
   std::size_t index{};
   for (const auto color : colors) {
     auto* player = request.add_players();
@@ -158,11 +159,12 @@ void tickets_admit_only_the_assigned_player_once() {
   FakeClock clock{std::chrono::system_clock::time_point{}};
   MatchManager manager(clock.now);
   const auto request = request_for({RobotColor::Blue, RobotColor::Orange});
-  const auto created = manager.create(request.room_id, request.players);
+  const auto created = manager.create(request.room_id, "relay-ridge", request.players);
 
   const auto first = manager.admit(created.match_id, created.launches[0].ticket);
   assert(first.has_value());
   assert(first->player_id == request.players[0].id);
+  assert(first->map_id == "relay-ridge");
   assert((first->roster == std::vector<RobotColor>{RobotColor::Blue, RobotColor::Orange}));
   assert(!manager.admit(created.match_id, created.launches[0].ticket).has_value());
   assert(!manager.admit(created.match_id, created.launches[1].ticket + "x").has_value());
@@ -310,6 +312,23 @@ void invalid_match_requests_are_rejected() {
   }
 }
 
+void unknown_map_ids_are_rejected() {
+  MatchManager manager;
+  const auto request = request_for({RobotColor::Blue, RobotColor::Orange});
+  bool rejected = false;
+  try {
+    static_cast<void>(manager.create(request.room_id, "unknown", request.players));
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  assert(rejected);
+
+  MatchCoordinatorService service(manager);
+  auto service_request = service_request_for({"blue", "orange"});
+  service_request.set_map_id("unknown");
+  assert(create_status(service, service_request).error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+}
+
 }  // namespace
 
 int main() {
@@ -324,5 +343,6 @@ int main() {
   creates_one_32_byte_ticket_for_each_player();
   active_matches_keep_rosters_and_input_acknowledgements_isolated();
   invalid_match_requests_are_rejected();
+  unknown_map_ids_are_rejected();
   std::cout << "match manager checks passed\n";
 }

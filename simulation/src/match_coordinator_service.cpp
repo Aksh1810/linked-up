@@ -43,7 +43,8 @@ grpc::Status MatchCoordinatorService::CreateMatch(
       players.push_back({player.id(), player.name(), parse_color(player.color())});
     }
 
-    const auto created = matches_.create(request->room_id(), std::move(players));
+    const auto created = matches_.create(
+        request->room_id(), request->map_id(), std::move(players));
     const auto expires_unix_ms = unix_milliseconds(created.expires_at);
     response->set_match_id(created.match_id);
     response->set_gameplay_url(kGameplayUrl.data(), kGameplayUrl.size());

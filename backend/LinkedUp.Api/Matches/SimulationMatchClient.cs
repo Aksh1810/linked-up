@@ -72,7 +72,12 @@ public sealed class SimulationMatchClient : ISimulationMatchClient
         deadline.CancelAfter(_deadline);
         try
         {
-            var request = new CreateMatchRequest { RoomId = room.Id.ToString(), Capacity = (uint)room.Capacity };
+            var request = new CreateMatchRequest
+            {
+                RoomId = room.Id.ToString(),
+                Capacity = (uint)room.Capacity,
+                MapId = room.MapId
+            };
             request.Players.Add(room.Players.Select(player => new Player
             {
                 Id = player.Id.ToString(), Name = player.Name, Color = player.Color.ToString().ToLowerInvariant()

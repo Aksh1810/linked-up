@@ -152,20 +152,27 @@ InputResult InputGate::accept(std::string_view message, Clock::time_point now) {
   }
 }
 
-std::string serialize_welcome(RobotColor player, const std::vector<RobotColor>& roster) {
+std::string serialize_welcome(
+    RobotColor player, const std::vector<RobotColor>& roster, std::string_view map_id) {
   validate_roster(roster);
+  static_cast<void>(route_config(map_id));
   if (std::find(roster.begin(), roster.end(), player) == roster.end()) {
     throw std::invalid_argument("welcome player is not in the roster");
   }
   crow::json::wvalue message;
   message["type"] = "welcome";
   message["player"] = color_name(player);
+  message["mapId"] = std::string(map_id);
   for (std::size_t index = 0; index < roster.size(); ++index) {
     message["players"][index] = color_name(roster[index]);
   }
   message["tickRate"] = 60;
   message["snapshotRate"] = 20;
   return message.dump();
+}
+
+std::string serialize_welcome(RobotColor player, const std::vector<RobotColor>& roster) {
+  return serialize_welcome(player, roster, "classic-ascent");
 }
 
 std::string serialize_welcome(RobotColor player) {

@@ -225,6 +225,14 @@ Config default_route_config() {
   return config;
 }
 
+Config route_config(std::string_view map_id) {
+  if (map_id == "classic-ascent" || map_id == "relay-ridge" || map_id == "crane-shift" ||
+      map_id == "windworks") {
+    return default_route_config();
+  }
+  throw std::invalid_argument("unknown map id");
+}
+
 class PrototypeSimulation::Impl {
  public:
   explicit Impl(std::vector<RobotColor> roster, Config config)

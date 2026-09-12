@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace linked_up {
@@ -103,6 +104,7 @@ struct Config {
 };
 
 [[nodiscard]] Config default_route_config();
+[[nodiscard]] Config route_config(std::string_view map_id);
 
 class PrototypeSimulation {
  public:

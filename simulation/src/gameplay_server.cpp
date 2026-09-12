@@ -201,11 +201,12 @@ class GameplayServer::Impl {
 
     const auto color = admission->color;
     const auto roster = admission->roster;
+    const auto map_id = admission->map_id;
     {
       std::lock_guard lock(mutex_);
       sessions_.emplace(&connection, Session{.admission = std::move(*admission)});
     }
-    connection.send_text(serialize_welcome(color, roster));
+    connection.send_text(serialize_welcome(color, roster, map_id));
   }
 
   void receive(crow::websocket::connection& connection, const std::string& message,

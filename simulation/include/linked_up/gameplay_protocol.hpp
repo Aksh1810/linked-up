@@ -48,6 +48,8 @@ class InputGate {
   std::size_t messages_in_window_{};
 };
 
+std::string serialize_welcome(
+    RobotColor player, const std::vector<RobotColor>& roster, std::string_view map_id);
 std::string serialize_welcome(RobotColor player, const std::vector<RobotColor>& roster);
 std::string serialize_welcome(RobotColor player);
 std::string serialize_snapshot(
