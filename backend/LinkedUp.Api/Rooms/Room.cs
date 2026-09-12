@@ -6,7 +6,7 @@ public enum RobotColor { Blue, Orange, Green, Purple }
 public enum RoomStatus { Waiting, Starting, InGame }
 public enum RoomError
 {
-    InvalidCapacity, InvalidCode, NotFound, Full, AlreadyStarting, NotEnoughPlayers,
+    InvalidCapacity, InvalidCode, InvalidMap, NotFound, Full, AlreadyStarting, NotEnoughPlayers,
     InvalidSession, NotHost, Contention, PlayersNotPresent, MatchStartCancelled, AlreadyInGame
 }
 
@@ -36,6 +36,7 @@ public sealed class Room
     public required Guid HostPlayerId { get; set; }
     public required DateTimeOffset CreatedAt { get; init; }
     public required List<RoomPlayer> Players { get; init; }
+    public string MapId { get; set; } = RoomMaps.ClassicAscent;
     public RoomStatus Status { get; set; }
     public Guid? MatchId { get; set; }
     public long Version { get; set; }
@@ -154,6 +155,30 @@ public sealed class Room
         }
 
         Status = RoomStatus.Starting;
+        Version++;
+    }
+
+    public void SetMap(string tokenHash, string mapId)
+    {
+        var player = ValidateSession(tokenHash);
+        if (player.Id != HostPlayerId)
+        {
+            throw new RoomException(RoomError.NotHost, "Only the host can select the map.");
+        }
+        if (Status == RoomStatus.Starting)
+        {
+            throw new RoomException(RoomError.AlreadyStarting, "The room is already starting.");
+        }
+        if (Status == RoomStatus.InGame)
+        {
+            throw new RoomException(RoomError.AlreadyInGame, "The room is already in a match.");
+        }
+        if (!RoomMaps.IsKnown(mapId))
+        {
+            throw new RoomException(RoomError.InvalidMap, "The selected map is not available.");
+        }
+
+        MapId = mapId;
         Version++;
     }
 

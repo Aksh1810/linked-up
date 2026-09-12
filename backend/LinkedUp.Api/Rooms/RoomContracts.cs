@@ -4,7 +4,7 @@ public sealed record PublicPlayer(Guid Id, string Name, string Color, bool IsHos
 
 public sealed record PublicRoom(
     Guid Id, string Code, int Capacity, string Status, DateTimeOffset CreatedAt,
-    long Version, Guid? MatchId, IReadOnlyList<PublicPlayer> Players)
+    long Version, Guid? MatchId, string MapId, IReadOnlyList<PublicPlayer> Players)
 {
     public static PublicRoom From(Room room) => new(
         room.Id,
@@ -20,6 +20,7 @@ public sealed record PublicRoom(
         room.CreatedAt,
         room.Version,
         room.Status == RoomStatus.InGame ? room.MatchId : null,
+        room.MapId,
         room.Players.Select(player => new PublicPlayer(
             player.Id,
             player.Name,
@@ -32,3 +33,5 @@ public sealed record PlayerSession(Guid PlayerId, string Token);
 public sealed record RoomSessionResponse(PublicRoom Room, PlayerSession Session);
 
 public sealed record CreateRoomRequest(int Capacity);
+
+public sealed record SetRoomMapRequest(string MapId);

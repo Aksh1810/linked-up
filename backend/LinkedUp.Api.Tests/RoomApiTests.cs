@@ -49,6 +49,7 @@ public sealed class RoomApiTests : IAsyncLifetime
         var created = await createdResponse.Content.ReadFromJsonAsync<RoomSessionResponse>();
         Assert.DoesNotContain("tokenHash", createdJson, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("waiting", created!.Room.Status);
+        Assert.Equal(RoomMaps.ClassicAscent, created.Room.MapId);
         Assert.Equal("blue", Assert.Single(created.Room.Players).Color);
         Assert.True(created.Room.Players[0].IsHost);
 
@@ -56,6 +57,36 @@ public sealed class RoomApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, joinedResponse.StatusCode);
         var joined = await joinedResponse.Content.ReadFromJsonAsync<RoomSessionResponse>();
         Assert.Equal("orange", joined!.Room.Players[1].Color);
+    }
+
+    [Fact]
+    public async Task Waiting_host_can_select_a_map_but_guest_and_unknown_map_cannot()
+    {
+        var created = await CreateRoomAsync(2);
+        var joinedResponse = await _client.PostAsync($"/api/rooms/{created.Room.Code}/join", null);
+        var joined = (await joinedResponse.Content.ReadFromJsonAsync<RoomSessionResponse>())!;
+        using var select = WithToken(
+            HttpMethod.Post, $"/api/rooms/{created.Room.Code}/map", created.Session.Token,
+            JsonContent.Create(new { mapId = RoomMaps.CraneShift }));
+
+        var selectedResponse = await _client.SendAsync(select);
+        var selected = await selectedResponse.Content.ReadFromJsonAsync<PublicRoom>();
+
+        Assert.Equal(HttpStatusCode.OK, selectedResponse.StatusCode);
+        Assert.Equal(RoomMaps.CraneShift, selected!.MapId);
+
+        using var guest = WithToken(
+            HttpMethod.Post, $"/api/rooms/{created.Room.Code}/map", joined.Session.Token,
+            JsonContent.Create(new { mapId = RoomMaps.Windworks }));
+        Assert.Equal(HttpStatusCode.Forbidden, (await _client.SendAsync(guest)).StatusCode);
+
+        using var unknown = WithToken(
+            HttpMethod.Post, $"/api/rooms/{created.Room.Code}/map", created.Session.Token,
+            JsonContent.Create(new { mapId = "unknown" }));
+        var unknownResponse = await _client.SendAsync(unknown);
+        Assert.Equal(HttpStatusCode.BadRequest, unknownResponse.StatusCode);
+        Assert.Equal("Invalid room request",
+            (await unknownResponse.Content.ReadFromJsonAsync<ProblemDetails>())!.Title);
     }
 
     [Fact]
@@ -209,9 +240,10 @@ public sealed class RoomApiTests : IAsyncLifetime
         return (await response.Content.ReadFromJsonAsync<RoomSessionResponse>())!;
     }
 
-    private static HttpRequestMessage WithToken(HttpMethod method, string url, string token)
+    private static HttpRequestMessage WithToken(
+        HttpMethod method, string url, string token, HttpContent? content = null)
     {
-        var request = new HttpRequestMessage(method, url);
+        var request = new HttpRequestMessage(method, url) { Content = content };
         request.Headers.Add("X-Player-Token", token);
         return request;
     }

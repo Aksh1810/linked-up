@@ -17,6 +17,7 @@ public static class RoomEndpoints
         rooms.MapGet("/{code}", GetAsync);
         rooms.MapPost("/{code}/join", JoinAsync);
         rooms.MapPost("/{code}/leave", LeaveAsync);
+        rooms.MapPost("/{code}/map", SetMapAsync);
         rooms.MapPost("/{code}/start", StartAsync);
         return endpoints;
     }
@@ -160,6 +161,24 @@ public static class RoomEndpoints
         return TypedResults.Ok(publicRoom);
     }
 
+    private static async Task<IResult> SetMapAsync(
+        string code,
+        SetRoomMapRequest request,
+        HttpRequest httpRequest,
+        RedisRoomStore store,
+        IHubContext<LobbyHub, ILobbyClient> lobby,
+        ILoggerFactory loggerFactory,
+        CancellationToken token)
+    {
+        var room = await store.SetMapAsync(
+            code, RequireToken(httpRequest), request.MapId, token);
+        loggerFactory.CreateLogger("LinkedUp.RoomLifecycle").LogInformation(
+            "Map {MapId} selected for room {RoomCode}", room.MapId, room.Code);
+        var publicRoom = PublicRoom.From(room);
+        await lobby.Clients.Group(room.Code).RoomUpdated(publicRoom);
+        return TypedResults.Ok(publicRoom);
+    }
+
     private static async Task RollbackAndBroadcastAsync(
         Room starting,
         RedisRoomStore store,
@@ -240,7 +259,7 @@ internal sealed class RoomProblemFilter(ILogger<RoomProblemFilter> logger) : IEn
         {
             var (status, title) = exception.Error switch
             {
-                RoomError.InvalidCapacity or RoomError.InvalidCode =>
+                RoomError.InvalidCapacity or RoomError.InvalidCode or RoomError.InvalidMap =>
                     (StatusCodes.Status400BadRequest, "Invalid room request"),
                 RoomError.InvalidSession =>
                     (StatusCodes.Status401Unauthorized, "Invalid room session"),

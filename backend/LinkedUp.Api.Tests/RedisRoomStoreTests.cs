@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace LinkedUp.Api.Tests;
 
@@ -59,6 +60,27 @@ public sealed class RedisRoomStoreTests : IAsyncLifetime
         Assert.DoesNotContain(created.Token, json);
         Assert.Equal(64, storedHash.Length);
         Assert.Equal(storedHash.ToLowerInvariant(), storedHash);
+    }
+
+    [Fact]
+    public async Task Selected_map_round_trips_and_legacy_room_defaults_to_classic()
+    {
+        var host = await _store.CreateAsync(2, CancellationToken.None);
+
+        var selected = await _store.SetMapAsync(
+            host.Room.Code, host.Token, RoomMaps.Windworks, CancellationToken.None);
+
+        Assert.Equal(RoomMaps.Windworks, selected.MapId);
+        Assert.Equal(RoomMaps.Windworks,
+            (await _store.GetAsync(host.Room.Code, CancellationToken.None))!.MapId);
+
+        var key = _prefix + host.Room.Code;
+        var legacy = JsonNode.Parse((await _database.StringGetAsync(key)).ToString())!.AsObject();
+        legacy.Remove("mapId");
+        await _database.StringSetAsync(key, legacy.ToJsonString(), TimeSpan.FromMinutes(120));
+
+        Assert.Equal(RoomMaps.ClassicAscent,
+            (await _store.GetAsync(host.Room.Code, CancellationToken.None))!.MapId);
     }
 
     [Fact]

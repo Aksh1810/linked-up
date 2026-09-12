@@ -133,6 +133,20 @@ public sealed class RedisRoomStore
         return room!;
     }
 
+    public async Task<Room> SetMapAsync(
+        string code, string rawToken, string mapId, CancellationToken token)
+    {
+        var (room, _) = await MutateAsync(
+            code,
+            current =>
+            {
+                current.SetMap(HashToken(rawToken), mapId);
+                return (true, true);
+            },
+            token);
+        return room!;
+    }
+
     public Task<Room?> CompleteStartAsync(
         Room starting, Guid matchId, CancellationToken token) =>
         MutateStartingAsync(starting, room => room.CompleteStart(matchId), token);

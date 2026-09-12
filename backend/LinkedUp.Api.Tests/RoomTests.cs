@@ -17,7 +17,36 @@ public sealed class RoomTests
         Assert.Equal(3, room.Capacity);
         Assert.Equal(RobotColor.Blue, Assert.Single(room.Players).Color);
         Assert.Equal(room.Players[0].Id, room.HostPlayerId);
+        Assert.Equal(RoomMaps.ClassicAscent, room.MapId);
         Assert.Equal(1, room.Version);
+    }
+
+    [Fact]
+    public void Host_can_select_a_known_map_while_waiting()
+    {
+        var room = TestRoom();
+
+        room.SetMap(Hash("host"), RoomMaps.RelayRidge);
+
+        Assert.Equal(RoomMaps.RelayRidge, room.MapId);
+        Assert.Equal(2, room.Version);
+    }
+
+    [Fact]
+    public void Map_selection_requires_a_known_map_and_waiting_host()
+    {
+        var room = TestRoom();
+        room.Join(PlayerId(2), Hash("orange"), DateTimeOffset.UnixEpoch.AddSeconds(1));
+
+        Assert.Equal(RoomError.NotHost,
+            Assert.Throws<RoomException>(() => room.SetMap(Hash("orange"), RoomMaps.Windworks)).Error);
+        Assert.Equal(RoomError.InvalidMap,
+            Assert.Throws<RoomException>(() => room.SetMap(Hash("host"), "unknown")).Error);
+
+        room.Start(Hash("host"));
+        Assert.Equal(RoomError.AlreadyStarting,
+            Assert.Throws<RoomException>(() => room.SetMap(Hash("host"), RoomMaps.CraneShift)).Error);
+        Assert.Equal(RoomMaps.ClassicAscent, room.MapId);
     }
 
     [Theory]
