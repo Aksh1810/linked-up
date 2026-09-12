@@ -1,5 +1,12 @@
 export type RobotColor = "blue" | "orange" | "green" | "purple";
 export type RoomStatus = "waiting" | "starting" | "inGame";
+export const mapNames = {
+  "classic-ascent": "Classic Ascent",
+  "relay-ridge": "Relay Ridge",
+  "crane-shift": "Crane Shift",
+  windworks: "Windworks",
+} as const;
+export type MapId = keyof typeof mapNames;
 
 export interface RoomPlayer {
   id: string;
@@ -15,6 +22,7 @@ export interface RoomState {
   status: RoomStatus;
   createdAt: string;
   version: number;
+  mapId: MapId;
   matchId: string | null;
   players: RoomPlayer[];
 }
@@ -68,16 +76,24 @@ export function normalizeRoomCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
+export function isMapId(value: unknown): value is MapId {
+  return typeof value === "string" && Object.hasOwn(mapNames, value);
+}
+
+export function mapName(mapId: MapId): string {
+  return mapNames[mapId];
+}
+
 export function parseRoom(value: unknown): RoomState {
   const capacity = record(value) ? value.capacity : undefined;
   const status = record(value) ? value.status : undefined;
   const version = record(value) ? value.version : undefined;
   const matchId = record(value) ? value.matchId : undefined;
   if (!record(value) || !ownKeys(value, [
-    "id", "code", "capacity", "status", "createdAt", "version", "matchId", "players",
+    "id", "code", "capacity", "status", "createdAt", "version", "mapId", "matchId", "players",
   ]) || !nonEmptyString(value.id) || !nonEmptyString(value.code)
     || !uuid.test(value.id) || !roomCode.test(value.code) || typeof capacity !== "number"
-    || ![2, 3, 4].includes(capacity) || !statuses.has(status as RoomStatus)
+    || ![2, 3, 4].includes(capacity) || !statuses.has(status as RoomStatus) || !isMapId(value.mapId)
     || !validUtcTimestamp(value.createdAt) || !Number.isSafeInteger(version)
     || (version as number) <= 0 || !Array.isArray(value.players)) {
     throw new TypeError("Invalid room.");
@@ -100,6 +116,7 @@ export function parseRoom(value: unknown): RoomState {
     status: status as RoomStatus,
     createdAt: value.createdAt,
     version: version as number,
+    mapId: value.mapId,
     matchId: matchId as string | null,
     players,
   };
@@ -139,5 +156,10 @@ export function clearRoomSession(storage: Storage, code: string): void {
 
 export function canStart(room: RoomState, playerId: string): boolean {
   return room.status === "waiting" && room.players.length === room.capacity
+    && room.players.some((player) => player.id === playerId && player.isHost);
+}
+
+export function canSelectMap(room: RoomState, playerId: string): boolean {
+  return room.status === "waiting"
     && room.players.some((player) => player.id === playerId && player.isHost);
 }

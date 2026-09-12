@@ -21,6 +21,7 @@ const room: RoomState = {
   status: "waiting",
   createdAt: "2026-08-30T12:00:00.000Z",
   version: 1,
+  mapId: "classic-ascent",
   matchId: null,
   players: [{
     id: "c7a17aa1-5131-4652-8f9e-e1d5dcb1f66b",

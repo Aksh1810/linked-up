@@ -28,6 +28,15 @@
         <p class="eyebrow">Room <output id="room-code"></output></p>
         <h2 id="room-title">Your linked crew</h2>
         <ul id="room-players" aria-live="polite"></ul>
+        <div class="map-field">
+          <label for="room-map">Map</label>
+          <select id="room-map" disabled>
+            <option value="classic-ascent">Classic Ascent</option>
+            <option value="relay-ridge">Relay Ridge</option>
+            <option value="crane-shift">Crane Shift</option>
+            <option value="windworks">Windworks</option>
+          </select>
+        </div>
         <div class="lobby-actions">
           <button id="copy-invite" type="button">Copy Invite Link</button>
           <button id="start-room" type="button" hidden>Start Game</button>

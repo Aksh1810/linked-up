@@ -59,13 +59,15 @@ body.lobby-active {
   font-size: clamp(1.7rem, 6vw, 2.8rem);
 }
 
-#landing-view label {
+#landing-view label,
+.map-field label {
   font: 800 0.72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 #player-count,
+#room-map,
 .lobby-actions button,
 #create-room {
   min-height: 46px;
@@ -78,8 +80,14 @@ body.lobby-active {
   text-transform: uppercase;
 }
 
-#player-count {
+#player-count,
+#room-map {
   padding: 0 12px;
+}
+
+.map-field {
+  display: grid;
+  gap: 8px;
 }
 
 .lobby-actions {
@@ -150,12 +158,14 @@ body.lobby-active {
 }
 
 #lobby-shell button:focus-visible,
-#player-count:focus-visible {
+#player-count:focus-visible,
+#room-map:focus-visible {
   outline: 3px solid #8fd9ff;
   outline-offset: 3px;
 }
 
-#lobby-shell button:disabled {
+#lobby-shell button:disabled,
+#room-map:disabled {
   cursor: wait;
   opacity: 0.55;
 }

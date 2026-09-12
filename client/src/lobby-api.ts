@@ -1,6 +1,7 @@
 import {
   normalizeRoomCode,
   parseRoom,
+  type MapId,
   type RoomSession,
   type RoomState,
 } from "./lobby-state.ts";
@@ -91,6 +92,12 @@ export class LobbyApi {
   startRoom(code: string, token: string): Promise<RoomState> {
     return this.request(`/api/rooms/${encodeURIComponent(normalizeRoomCode(code))}/start`, {
       method: "POST", headers: { "X-Player-Token": token },
+    }, parseRoom);
+  }
+
+  setMap(code: string, token: string, mapId: MapId): Promise<RoomState> {
+    return this.request(`/api/rooms/${encodeURIComponent(normalizeRoomCode(code))}/map`, {
+      method: "POST", headers: { "X-Player-Token": token }, body: JSON.stringify({ mapId }),
     }, parseRoom);
   }
 

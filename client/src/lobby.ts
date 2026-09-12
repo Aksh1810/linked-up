@@ -2,10 +2,12 @@ import { LobbyApi, LobbyApiError } from "./lobby-api.ts";
 import { LobbyConnection } from "./lobby-connection.ts";
 import type { MatchLaunch } from "./match-launch.ts";
 import {
+  canSelectMap,
   canStart,
   clearRoomSession,
   loadRoomSession,
   normalizeRoomCode,
+  isMapId,
   saveRoomSession,
   type RoomPlayer,
   type RoomSession,
@@ -17,6 +19,7 @@ interface LobbyElements {
   landing: HTMLElement;
   room: HTMLElement;
   playerCount: HTMLSelectElement;
+  map: HTMLSelectElement;
   create: HTMLButtonElement;
   code: HTMLOutputElement;
   players: HTMLUListElement;
@@ -39,6 +42,7 @@ function lobbyElements(): LobbyElements {
     landing: required("#landing-view"),
     room: required("#room-view"),
     playerCount: required("#player-count"),
+    map: required("#room-map"),
     create: required("#create-room"),
     code: required("#room-code"),
     players: required("#room-players"),
@@ -130,6 +134,8 @@ export async function startLobby(
     elements.leave.disabled = value;
     elements.start.disabled = value || !currentRoom || !currentSession
       || !canStart(currentRoom, currentSession.playerId);
+    elements.map.disabled = value || !currentRoom || !currentSession
+      || !canSelectMap(currentRoom, currentSession.playerId);
   };
 
   const renderRoom = (room: RoomState): void => {
@@ -137,6 +143,7 @@ export async function startLobby(
     elements.landing.hidden = true;
     elements.room.hidden = false;
     elements.code.value = room.code;
+    elements.map.value = room.mapId;
     elements.players.replaceChildren(...roomSlots(room).map((player, index) => {
       const item = document.createElement("li");
       item.className = player ? `room-player room-player--${player.color}` : "room-player room-player--empty";
@@ -232,6 +239,7 @@ export async function startLobby(
     elements.players.replaceChildren();
     elements.start.hidden = true;
     elements.copy.disabled = true;
+    elements.map.disabled = true;
     elements.start.disabled = true;
     elements.leave.disabled = busy;
     setStatus(message);
@@ -361,6 +369,34 @@ export async function startLobby(
       if (isCurrentRoute(version)) renderRoom(room);
     } catch (error) {
       if (isCurrentRoute(version)) setStatus(friendlyLobbyError(error));
+    } finally {
+      if (isCurrentRoute(version)) setBusy(false);
+    }
+  });
+
+  elements.map.addEventListener("change", async () => {
+    if (!canRunLobbyCommand(busy) || !currentRoom || !currentSession
+      || !canSelectMap(currentRoom, currentSession.playerId)) {
+      if (currentRoom) elements.map.value = currentRoom.mapId;
+      return;
+    }
+    const mapId = elements.map.value;
+    if (!isMapId(mapId)) {
+      elements.map.value = currentRoom.mapId;
+      return;
+    }
+    const version = routeVersion;
+    const room = currentRoom;
+    setBusy(true);
+    setStatus("Changing map...");
+    try {
+      const updated = await api.setMap(room.code, currentSession.token, mapId);
+      if (isCurrentRoute(version)) renderRoom(updated);
+    } catch (error) {
+      if (isCurrentRoute(version)) {
+        elements.map.value = currentRoom?.mapId ?? room.mapId;
+        setStatus(friendlyLobbyError(error));
+      }
     } finally {
       if (isCurrentRoute(version)) setBusy(false);
     }

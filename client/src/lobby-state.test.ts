@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  canSelectMap,
   canStart,
   loadRoomSession,
   parseRoom,
   saveRoomSession,
+  mapName,
   type RoomSession,
   type RoomState,
 } from "./lobby-state.ts";
@@ -33,6 +35,7 @@ const validRoom: RoomState = {
   status: "waiting",
   createdAt: "2026-08-30T12:00:00.000Z",
   version: 1,
+  mapId: "classic-ascent",
   matchId: null,
   players: [
     { id: "c7a17aa1-5131-4652-8f9e-e1d5dcb1f66b", name: "Blue Robot", color: "blue", isHost: true },
@@ -102,6 +105,14 @@ test("room parsing validates status, color, and player fields", () => {
   }));
 });
 
+test("room parsing accepts only known maps", () => {
+  assert.equal(parseRoom({ ...validRoom, mapId: "relay-ridge" }).mapId, "relay-ridge");
+  assert.throws(() => parseRoom({ ...validRoom, mapId: "unknown-map" }));
+  const { mapId: _, ...missingMap } = validRoom;
+  assert.throws(() => parseRoom(missingMap));
+  assert.equal(mapName("windworks"), "Windworks");
+});
+
 test("room parsing admits only public match metadata for a full in-game room", () => {
   const inGame = {
     ...validRoom,
@@ -139,6 +150,12 @@ test("only the full-room host can start", () => {
     validRoom.players[0].id), false);
 });
 
+test("only the waiting-room host can select a map", () => {
+  assert.equal(canSelectMap(validRoom, validRoom.players[0].id), true);
+  assert.equal(canSelectMap(validRoom, validRoom.players[1].id), false);
+  assert.equal(canSelectMap({ ...validRoom, status: "starting" }, validRoom.players[0].id), false);
+});
+
 test("sessions are scoped by normalized room code", () => {
   const storage = new MemoryStorage();
   saveRoomSession(storage, "xk72", session);
@@ -168,7 +185,7 @@ test("lobby API sends each room command with the public contract", async () => {
   const calls: Array<{ url: URL; init?: RequestInit }> = [];
   const api = new LobbyApi("http://rooms.test", async (input, init) => {
     calls.push({ url: new URL(input.toString()), init });
-    if (calls.length === 2 || calls.length === 5) return jsonResponse(validRoom);
+    if (calls.length === 2 || calls.length === 5 || calls.length === 6) return jsonResponse(validRoom);
     if (calls.length === 4) return new Response(null, { status: 204 });
     return jsonResponse(roomSessionResponse());
   });
@@ -177,6 +194,7 @@ test("lobby API sends each room command with the public contract", async () => {
   assert.deepEqual(await api.getRoom("xk72"), validRoom);
   assert.deepEqual(await api.joinRoom("xk72"), roomSessionResponse());
   await api.leaveRoom("xk72", "token");
+  assert.deepEqual(await api.setMap("xk72", "token", "relay-ridge"), validRoom);
   assert.deepEqual(await api.startRoom("xk72", "token"), validRoom);
 
   assert.deepEqual(calls.map(({ url, init }) => ({
@@ -189,6 +207,7 @@ test("lobby API sends each room command with the public contract", async () => {
     { path: "/api/rooms/XK72", method: "GET", body: undefined, token: null },
     { path: "/api/rooms/XK72/join", method: "POST", body: undefined, token: null },
     { path: "/api/rooms/XK72/leave", method: "POST", body: undefined, token: "token" },
+    { path: "/api/rooms/XK72/map", method: "POST", body: '{"mapId":"relay-ridge"}', token: "token" },
     { path: "/api/rooms/XK72/start", method: "POST", body: undefined, token: "token" },
   ]);
 });
