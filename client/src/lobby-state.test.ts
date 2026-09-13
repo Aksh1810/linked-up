@@ -11,7 +11,7 @@ import {
   type RoomSession,
   type RoomState,
 } from "./lobby-state.ts";
-import { LobbyApi, LobbyApiError, friendlyProblemMessage } from "./lobby-api.ts";
+import { LobbyApi, LobbyApiError, friendlyProblemMessage, type NotModified } from "./lobby-api.ts";
 import { LobbyConnection, type LobbyTransport } from "./lobby-connection.ts";
 
 class MemoryStorage implements Storage {
@@ -232,6 +232,30 @@ test("lobby API calls its default fetch with the global receiver", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("lobby API performs conditional room reads and presence refreshes", async () => {
+  const calls: Array<{ url: URL; init?: RequestInit }> = [];
+  const api = new LobbyApi("http://rooms.test", async (input, init) => {
+    calls.push({ url: new URL(input.toString()), init });
+    return calls.length === 1
+      ? new Response(null, { status: 304, headers: { ETag: '"room-7"' } })
+      : new Response(null, { status: 204 });
+  });
+
+  const unchanged = await api.getRoom("xk72", '"room-7"') as NotModified;
+  assert.deepEqual(unchanged, { notModified: true, etag: '"room-7"' });
+  await api.presence("xk72", "secret");
+
+  assert.deepEqual(calls.map(({ url, init }) => ({
+    path: url.pathname,
+    method: init?.method ?? "GET",
+    etag: new Headers(init?.headers).get("If-None-Match"),
+    token: new Headers(init?.headers).get("X-Player-Token"),
+  })), [
+    { path: "/api/rooms/XK72", method: "GET", etag: '"room-7"', token: null },
+    { path: "/api/rooms/XK72/presence", method: "POST", etag: null, token: "secret" },
+  ]);
 });
 
 test("lobby API validates responses, maps Problem Details, and preserves network errors", async () => {

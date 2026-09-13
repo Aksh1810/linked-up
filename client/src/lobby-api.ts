@@ -7,8 +7,10 @@ import {
 } from "./lobby-state.ts";
 
 export interface RoomSessionResponse { room: RoomState; session: RoomSession; }
+export interface NotModified { notModified: true; etag: string; }
 
-export const lobbyApiUrl = import.meta.env?.VITE_LOBBY_API_URL ?? "http://127.0.0.1:5000";
+const browserOrigin = typeof location === "undefined" ? "http://127.0.0.1:5000" : location.origin;
+export const lobbyApiUrl = import.meta.env?.VITE_LOBBY_API_URL ?? browserOrigin;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function friendlyProblemMessage(problem: unknown): string {
@@ -75,8 +77,21 @@ export class LobbyApi {
     return this.request("/api/rooms", { method: "POST", body: JSON.stringify({ capacity }) }, parseSessionResponse);
   }
 
-  getRoom(code: string): Promise<RoomState> {
-    return this.request(`/api/rooms/${encodeURIComponent(normalizeRoomCode(code))}`, {}, parseRoom);
+  getRoom(code: string): Promise<RoomState>;
+  getRoom(code: string, etag: string): Promise<RoomState | NotModified>;
+  async getRoom(code: string, etag?: string): Promise<RoomState | NotModified> {
+    const response = await this.#fetcher.call(globalThis,
+      new URL(`/api/rooms/${encodeURIComponent(normalizeRoomCode(code))}`, this.#baseUrl), {
+        headers: etag ? { "If-None-Match": etag } : undefined,
+      });
+    if (response.status === 304 && etag !== undefined) {
+      return { notModified: true, etag: response.headers.get("ETag") ?? etag };
+    }
+    if (!response.ok) {
+      const problem = await response.json().catch(() => undefined);
+      throw new LobbyApiError(response.status, problem);
+    }
+    return parseRoom(await response.json());
   }
 
   joinRoom(code: string): Promise<RoomSessionResponse> {
@@ -99,6 +114,12 @@ export class LobbyApi {
     return this.request(`/api/rooms/${encodeURIComponent(normalizeRoomCode(code))}/map`, {
       method: "POST", headers: { "X-Player-Token": token }, body: JSON.stringify({ mapId }),
     }, parseRoom);
+  }
+
+  presence(code: string, token: string): Promise<void> {
+    return this.request(`/api/rooms/${encodeURIComponent(normalizeRoomCode(code))}/presence`, {
+      method: "POST", headers: { "X-Player-Token": token },
+    }, () => undefined);
   }
 
   private async request<T>(path: string, init: RequestInit, parse: (value: unknown) => T): Promise<T> {
