@@ -1,114 +1,68 @@
 # Linked-Up
 
-Linked-Up is a planned 2–4 player cooperative browser climbing game where
-small robots are physically connected by an energy tether. One player's jump
-or fall can pull the rest of the team.
+Linked-Up is a 2–4 player cooperative browser climbing game. Small robots share an energy tether, so a jump, fall, or rescue affects the whole team. The host chooses one of four maps in the lobby: Classic Ascent, Relay Ridge, Crane Shift, or Windworks.
 
-The repository currently contains the Phase 9 local gameplay slice:
+## Public-alpha architecture
 
-- a Redis-backed ASP.NET Core lobby for temporary 2–4 player rooms, live
-  SignalR membership updates, host migration, and host-only start;
-- an ASP.NET Core handoff from a full lobby to an in-memory C++ match over
-  loopback h2c gRPC;
-- a loopback C++ authoritative Jolt server for ordered crews of two to four
-  Blue, Orange, Green, and Purple robots, at 60 Hz with snapshots at 20 Hz;
-- a browser countdown and direct authenticated WebSocket handoff, with local
-  prediction and authoritative smoothing for the dynamic roster.
-- four authoritative five-zone blockout routes—Classic Ascent, Relay Ridge,
-  Crane Shift, and Windworks—with four team checkpoints each and server-owned
-  geometry descriptors for browser rendering.
-
-## Architecture
+The deployable version runs as one Vercel project:
 
 ```text
-Browser -- HTTP/SignalR --> ASP.NET Core -- Redis
-ASP.NET Core -- h2c gRPC :50051 --> C++ MatchManager
-Browser -- ws match + short-lived ticket :9002 --> C++ authoritative match
+Browser ── HTTPS room + signaling requests ──> Vercel Functions ──> Redis
+Host browser ── WebRTC DataChannels ──> guest browsers
+Host Web Worker ── WebAssembly/Jolt ──> authoritative snapshots at 20 Hz
 ```
 
-- Browser: input and presentation
-- C++: in-memory match admission and authoritative physics
-- ASP.NET Core: temporary room membership, host rules, and match orchestration
-- Redis: expiring room state
+- Vercel serves the Babylon.js client and short-lived room/signaling Functions.
+- Redis stores expiring room membership, token digests, and temporary signaling mailboxes.
+- The room host runs the authoritative 60 Hz C++/Jolt simulation compiled to WebAssembly.
+- Guests send input only to the host and render validated host snapshots.
+- The production build contains no loopback gameplay bypass.
 
-See [architecture](docs/architecture.md), [game design](docs/game-design.md),
-and [networking](docs/networking.md).
+This keeps the alpha on Vercel's Hobby-compatible request model: no permanent game server and no long-running Vercel Function. Direct WebRTC has no TURN relay, so restrictive VPN, school, workplace, carrier, or symmetric-NAT combinations may fail to connect. The lobby tells players this before room creation.
 
-## Prerequisites
+See [architecture](docs/architecture.md), [networking](docs/networking.md), and [game design](docs/game-design.md).
 
-- CMake 3.20 or newer
-- A C++20 compiler
-- OpenSSL 3 headers and libraries
-- .NET 10 SDK
-- Node.js 22.12 or newer (or 20.19)
-- Docker with Compose
-- Git and internet access during the first configure, which fetches pinned
-  Jolt Physics `v5.6.0`, Crow `v1.3.3`, and Asio `1.30.2` into the ignored
-  build directory
+## Deploy prerequisites
 
-## Build and run
+- Node.js 20.19 or newer
+- A Vercel personal Hobby account
+- Vercel CLI
+- A free Redis integration connected to the Vercel project
+- `REDIS_URL` enabled for Preview and Production
+
+Install and verify locally:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j 4
-ctest --test-dir build --output-on-failure
+npm ci
+npm --prefix client ci
+npm test
+npm --prefix client run typecheck
+npm run build
+node scripts/verify-vercel-build.mjs
 ```
 
-The C++ checks cover authoritative tether and route behavior plus the gameplay
-JSON trust boundary.
-
-## Run a local room-to-match handoff
-
-Install client packages once with `npm --prefix client install`, build the C++
-server, then start these four processes in order:
+Build the Vercel artifact with `vercel build --yes`, then verify it with:
 
 ```sh
-docker compose -f infrastructure/docker-compose.yml up -d redis
+node scripts/verify-vercel-build.mjs .vercel/output
 ```
 
-```sh
-./build/simulation/linked-up-server
-```
+`.env.example` names the only required runtime secret. Never commit the Redis value.
 
-```sh
-env DOTNET_CLI_HOME=/tmp/linked-up-dotnet dotnet run --project backend/LinkedUp.Api --urls http://127.0.0.1:5000
-```
+## Local browser development
 
-```sh
-npm --prefix client run dev -- --host 127.0.0.1
-```
+Run the Vite client with `npm --prefix client run dev`. Production room APIs require Redis and are best exercised with Vercel's local emulator after linking the project and pulling Development environment variables.
 
-Open `http://127.0.0.1:5173/`, choose 2–4 players, and create a room. Use Copy
-Invite Link to share the `http://127.0.0.1:5173/room/CODE` URL; each browser
-that opens it joins the room and receives live membership and host updates without reloads.
-Only the host can choose the map while the room is waiting or start once every
-slot is filled; guests see map changes live but cannot edit the selection.
-Starting creates an in-memory C++ match using the selected authored route. Each subscribed player receives its own
-private `MatchReady` launch, sees `3`, `2`, `1`, `CLIMB!`, then connects
-directly to the authoritative server.
+The repository retains the older native stack for simulation development. In a Vite development build only, `?player=blue` and `?player=orange` can connect to the loopback C++ server at `127.0.0.1:9002`. Vite removes this branch and its URLs from production output.
 
-For a normal room start, the launch ticket is a short-lived, one-time opaque
-credential delivered only through that player's private SignalR message. The
-browser retains it only in memory until it creates its direct WebSocket; the
-C++ process stores only its SHA-256 digest. Tickets, gameplay snapshots, and
-raw ticket values do not enter Redis or public room updates.
+To rebuild the browser simulation, install Emscripten and run `scripts/build-wasm.sh`. It pins Jolt Physics `v5.6.0`, generates the committed JavaScript/Wasm artifacts, builds a native parity fixture from the same source, and records source hashes.
 
-Redis is required for room creation, joining, and readiness. The API exposes:
+## Verification
 
-- `http://127.0.0.1:5000/health/live` for process liveness
-- `http://127.0.0.1:5000/health/ready` for Redis-backed readiness
+- API/shared tests: `npm run test:api`
+- Client tests: `npm --prefix client test`
+- Type check: `npm --prefix client run typecheck`
+- Wasm/native parity: `node simulation/wasm/wasm_bridge_test.mjs`
+- Vercel config/artifact: `node --test scripts/verify-vercel-build.test.mjs`
 
-## Local-development bypass
-
-With the C++ server and Vite running on loopback, the retained direct pages are
-available only for local development:
-
-- `http://127.0.0.1:5173/?player=blue`
-- `http://127.0.0.1:5173/?player=orange`
-
-They bypass the lobby and ticketed match handoff, use the C++ server's local
-two-player development match, and must not be used to represent the normal room
-flow. The gameplay health endpoint is `http://127.0.0.1:9002/health`.
-
-WebTransport, production TLS, a SignalR backplane, and deployment work remain
-outside this local slice.
+The Redis concurrency test runs when `TEST_REDIS_URL` is set; otherwise it is reported as skipped.

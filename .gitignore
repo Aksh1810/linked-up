@@ -7,9 +7,14 @@
 /client/dist/
 /client/node_modules/
 /node_modules/
+/.vercel/
+.env
+.env.*
+!.env.example
 .DS_Store
 docs/
 /backend/**/bin/
 /backend/**/obj/
 .cursorrules
 .worktrees/
+.vercel

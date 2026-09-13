@@ -9,11 +9,11 @@ import {
   touchPresence,
   type RoomGenerators,
   type RoomRecord,
-} from "../_lib/room-domain.ts";
-import { RedisRoomStore } from "../_lib/redis-room-store.ts";
-import type { RoomStore } from "../_lib/room-store.ts";
-import { HttpError, emptyResponse, exactObject, jsonResponse, problemResponse, readJson } from "../_lib/http.ts";
-import { RedisRateLimiter, type RateLimiter } from "../_lib/rate-limit.ts";
+} from "./room-domain.ts";
+import { RedisRoomStore } from "./redis-room-store.ts";
+import type { RoomStore } from "./room-store.ts";
+import { HttpError, emptyResponse, exactObject, jsonResponse, problemResponse, readJson } from "./http.ts";
+import { RedisRateLimiter, type RateLimiter } from "./rate-limit.ts";
 import { isMapId } from "../../shared/lobby-contract.ts";
 
 export interface RoomApiDependencies {

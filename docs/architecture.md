@@ -1,83 +1,37 @@
 # Architecture
 
-Linked-Up keeps four ownership boundaries:
+Linked-Up has separate control-plane and gameplay paths.
 
-| Component | Owns |
+| Component | Responsibility |
 | --- | --- |
-| Browser | Controls, camera, rendering, animation, audio, interpolation, and local presentation |
-| C++ simulation | In-memory match lifecycle, ticket admission, fixed-step physics, player state, and tether forces |
-| ASP.NET Core | Temporary player sessions, rooms, lobby presence, host rules, and match orchestration |
-| Redis | Expiring room and session state |
+| Vercel static output | SPA shell, Babylon.js renderer, Web Worker, and Wasm artifact |
+| Vercel Functions | Strict room, presence, host action, and WebRTC signaling endpoints |
+| Redis | Expiring public room state, hashed player credentials, rate-limit buckets, and recipient-only signaling mailboxes |
+| Host browser | Authoritative fixed-step match and one WebRTC connection per guest |
+| Guest browser | Local input/prediction and validated host-snapshot presentation |
 
-The browser sends player intent; it never sends trusted positions. ASP.NET
-Core stays out of the high-frequency gameplay path.
+## Room control plane
 
-```text
-Browser -- HTTP/SignalR --> ASP.NET Core -- Redis
-ASP.NET Core -- h2c gRPC :50051 --> C++ MatchManager
-Browser -- ws match + short-lived ticket :9002 --> C++ authoritative match
-```
+Room create/join responses return a private per-player token. The browser keeps it in that tab's `sessionStorage` and sends it in `X-Player-Token` only for authenticated requests. Redis stores a SHA-256 digest, never the raw token. Public room responses have an exact schema and cannot contain tokens or signaling bodies.
 
-The API makes a deadline-bound, versioned h2c gRPC call to the loopback C++
-`MatchManager` once a full, present room starts. C++ creates the authoritative
-in-memory match and returns a launch for every ordered player. The API persists
-the room's `InGame` state, publishes its public update, and sends each launch
-only through that player's subscribed SignalR connections. Gameplay thereafter
-flows directly between browser and C++.
+Browsers poll public room state with ETags, refresh presence, and back off after transient failures. Redis transactions enforce capacity, host-only map/start operations, and host migration. Starting a full room assigns a public match ID and protocol version 1; the private session remains available for authenticated signaling and reload retry.
 
-## Authoritative match implementation
+## Peer-hosted match
 
-`MatchManager` owns each in-memory two-to-four-player match. It mints a
-32-byte opaque ticket per player, keeps only its SHA-256 digest, compares
-digests in constant time, expires the ticket after 60 seconds, and consumes it
-on successful admission. `PrototypeSimulation` owns that match's Jolt world,
-ordered capsule roster, validated inputs, and group tether. `step()` advances
-exactly one fixed tick; the caller owns wall-clock scheduling.
+The host opens three DataChannels per guest: reliable ordered control, unreliable unordered input, and unreliable unordered snapshots. Temporary offers, answers, and ICE candidates pass through recipient-only Redis mailboxes. Once every channel is ready, the host sends the protocol-1 match handshake and countdown control message.
 
-`linked-up-server` starts both loopback listeners: gRPC on `127.0.0.1:50051`
-and gameplay WebSockets on `127.0.0.1:9002`. Crow validates admission and JSON
-input, copies the latest intent into the fixed 60 Hz simulation loop, and
-broadcasts match snapshots every third tick. The same snapshot carries the
-authoritative route state: checkpoint, elapsed ticks, running/finished status,
-ordered obstacle transforms, dimensions, and zone labels. Each player state acknowledges
-the last input sequence actually applied by that tick. A disconnect neutralizes
-that player's input.
+After the countdown, the host creates a dedicated Web Worker. The worker loads the generated C++/Jolt Wasm module, validates all commands, advances a monotonic 60 Hz fixed clock with an eight-step catch-up cap, and emits validated snapshots every third tick. The main thread renders the host snapshot locally and broadcasts the same state to guests. Guest input is validated by the peer codec and applied only by the host simulation. Disconnecting a guest neutralizes that player's latest input.
 
-The browser owns only input and presentation. `GameplayConnection` isolates the
-native WebSocket and wire codec from Babylon.js. `game.ts` sends camera-relative
-intent. A pure 32-entry `SnapshotBuffer` renders the remote robot six ticks
-behind the estimated server tick. A pure `PredictionReconciler` immediately
-steps local movement and jump, then replaces physics state with each
-authoritative result and replays unacknowledged inputs. Only its displayed
-position receives an 80 ms correction; resets and corrections over two metres
-snap directly. The requested local robot remains the camera target.
+The Wasm build uses Jolt `v5.6.0`, cross-platform deterministic mode, a one-megabyte stack required by Jolt collision jobs, exception-safe validation boundaries, and a writable project-local Emscripten cache. A parity test drives every map with 2, 3, and 4 players for 240 ticks and compares native and Wasm state within `0.00001` world units.
 
-Tether forces, collisions, platform limits, grounded truth, and resets remain
-server-only. The browser interpolates authoritative tether tension and connects
-the tether around the displayed ordered roster; it does not simulate tether
-physics.
+## Trust and availability boundaries
 
-## Lobby-to-match handoff
+- Browsers never accept player transforms from another guest.
+- Every Wasm snapshot is parsed through the gameplay protocol before rendering or transmission.
+- Signaling messages are bounded, exact-schema, sender-authenticated, and recipient-only.
+- No token, SDP, or ICE candidate is included in public error copy.
+- The host is authoritative and must keep the page open and visible.
+- There is no TURN relay in the free alpha; direct ICE can fail on restrictive networks.
+- A host departure ends the guest match. Guest departure does not transfer live simulation authority.
 
-The root browser route creates temporary rooms with capacities from two to
-four. Invite routes join the next Blue, Orange, Green, or Purple slot. The
-browser keeps each private session token in that tab's `sessionStorage`, sends
-it only for authenticated room operations and SignalR subscription, and
-renders only the API's public room shape.
-
-ASP.NET Core owns room validation, host-only start, host migration, and the
-`waiting`/`starting`/`inGame` lifecycle. It only creates a match when every
-player has an active lobby presence; unavailable C++ creation rolls the room
-back to `waiting`. SignalR pushes public room updates and delivers each private
-`MatchReady` launch only to the matching player's connections. Presence is
-in-process for the single API instance.
-
-Redis owns optimistic room mutations, hashed lobby session tokens, and a
-sliding two-hour expiry. It contains neither gameplay snapshots nor gameplay
-tickets. Normal browsers retain the private ticket only in memory through the
-three-second countdown and use it once to open their direct WebSocket.
-
-`?player=blue|orange` remains a clearly local-only, loopback development bypass
-to a fixed two-player match. It skips the lobby and ticket boundary. Accounts,
-persistent match storage, a SignalR backplane, WebTransport, production TLS,
-and deployment work are outside this slice.
+The older ASP.NET/C++ server path remains for native local engineering, but it is not part of the Vercel production artifact.

@@ -4,7 +4,7 @@ import test from "node:test";
 import { MemoryRoomStore } from "../_lib/memory-room-store.ts";
 import type { RateLimiter, RateLimitResult } from "../_lib/rate-limit.ts";
 import type { RoomGenerators } from "../_lib/room-domain.ts";
-import { handleRoomRequest, type RoomApiDependencies } from "./room-api.ts";
+import { handleRoomRequest, type RoomApiDependencies } from "../_lib/room-api.ts";
 
 const ids = [
   "10000000-0000-4000-8000-000000000001",

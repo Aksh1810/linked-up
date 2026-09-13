@@ -1,11 +1,11 @@
 import { parseSignalEnvelope } from "../../shared/signaling-contract.ts";
-import { HttpError, jsonResponse, problemResponse, readJson } from "../_lib/http.ts";
-import { RedisSignalStore } from "../_lib/redis-signal-store.ts";
-import type { SignalStore } from "../_lib/signal-store.ts";
-import { RedisRateLimiter, type RateLimiter } from "../_lib/rate-limit.ts";
-import { RedisRoomStore } from "../_lib/redis-room-store.ts";
-import type { RoomStore } from "../_lib/room-store.ts";
-import { RoomDomainError, authenticateRoomSession } from "../_lib/room-domain.ts";
+import { HttpError, jsonResponse, problemResponse, readJson } from "./http.ts";
+import { RedisSignalStore } from "./redis-signal-store.ts";
+import type { SignalStore } from "./signal-store.ts";
+import { RedisRateLimiter, type RateLimiter } from "./rate-limit.ts";
+import { RedisRoomStore } from "./redis-room-store.ts";
+import type { RoomStore } from "./room-store.ts";
+import { RoomDomainError, authenticateRoomSession } from "./room-domain.ts";
 
 export interface SignalingApiDependencies {
   roomStore: RoomStore;

@@ -5,7 +5,7 @@ import { MemoryRateLimiter } from "../_lib/rate-limit.ts";
 import { createRoom, joinRoom } from "../_lib/room-domain.ts";
 import { MemoryRoomStore } from "../_lib/memory-room-store.ts";
 import { MemorySignalStore } from "../_lib/memory-signal-store.ts";
-import { handleSignalingRequest } from "./signaling-api.ts";
+import { handleSignalingRequest } from "../_lib/signaling-api.ts";
 
 const now = new Date("2026-09-12T12:00:00.000Z");
 
