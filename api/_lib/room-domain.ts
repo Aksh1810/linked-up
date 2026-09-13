@@ -104,6 +104,10 @@ function sessionPlayer(room: RoomRecord, rawToken: string): StoredPlayer {
   return player;
 }
 
+export function authenticateRoomSession(room: RoomRecord, rawToken: string): StoredPlayer {
+  return { ...sessionPlayer(room, rawToken) };
+}
+
 function copy(room: RoomRecord): RoomRecord {
   return { ...room, players: room.players.map((player) => ({ ...player })) };
 }
