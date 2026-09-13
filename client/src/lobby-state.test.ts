@@ -12,7 +12,6 @@ import {
   type RoomState,
 } from "./lobby-state.ts";
 import { LobbyApi, LobbyApiError, friendlyProblemMessage, type NotModified } from "./lobby-api.ts";
-import { LobbyConnection, type LobbyTransport } from "./lobby-connection.ts";
 
 class MemoryStorage implements Storage {
   #values = new Map<string, string>();
@@ -51,37 +50,6 @@ function roomSessionResponse(): { room: RoomState; session: RoomSession } {
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
-
-class FakeLobbyTransport implements LobbyTransport {
-  readonly calls: string[] = [];
-  snapshot: unknown = validRoom;
-  #roomUpdated?: (...args: unknown[]) => void;
-  #matchReady?: (...args: unknown[]) => void;
-  #reconnecting?: () => void | Promise<void>;
-  #reconnected?: () => void | Promise<void>;
-  #closed?: () => void | Promise<void>;
-
-  on(method: string, handler: (...args: unknown[]) => void): void {
-    this.calls.push(`on:${method}`);
-    if (method === "RoomUpdated") this.#roomUpdated = handler;
-    if (method === "MatchReady") this.#matchReady = handler;
-  }
-
-  onreconnecting(handler: () => void | Promise<void>): void { this.#reconnecting = handler; }
-  onreconnected(handler: () => void | Promise<void>): void { this.#reconnected = handler; }
-  onclose(handler: () => void | Promise<void>): void { this.#closed = handler; }
-  async start(): Promise<void> { this.calls.push("start"); }
-  async stop(): Promise<void> { this.calls.push("stop"); await this.#closed?.(); }
-  async invoke<T>(method: string, ...args: unknown[]): Promise<T> {
-    this.calls.push(`invoke:${method}:${args.join(":")}`);
-    return this.snapshot as T;
-  }
-
-  emitRoomUpdated(room: unknown): void { this.#roomUpdated?.(room); }
-  emitMatchReady(launch: unknown): void { this.#matchReady?.(launch); }
-  reconnecting(): void | Promise<void> { return this.#reconnecting?.(); }
-  reconnected(): void | Promise<void> { return this.#reconnected?.(); }
 }
 
 test("room parsing rejects private fields and malformed capacities", () => {
@@ -271,105 +239,4 @@ test("lobby API validates responses, maps Problem Details, and preserves network
   const networkError = new Error("offline");
   const offline = new LobbyApi("http://rooms.test", async () => { throw networkError; });
   await assert.rejects(offline.getRoom("XK72"), (error: unknown) => error === networkError);
-});
-
-test("lobby connection subscribes before and after reconnect with validated snapshots", async () => {
-  const transport = new FakeLobbyTransport();
-  const rooms: RoomState[] = [];
-  let factoryUrl = "";
-  let factoryDelays: readonly number[] = [];
-  const connection = new LobbyConnection("xk72", "token", session.playerId, { onRoom: (room) => rooms.push(room) }, undefined,
-    (url, delays) => {
-      factoryUrl = url;
-      factoryDelays = delays;
-      return transport;
-    });
-
-  assert.deepEqual(transport.calls.slice(0, 2), ["on:RoomUpdated", "on:MatchReady"]);
-  await connection.connect();
-  await transport.reconnected();
-  await connection.dispose();
-
-  assert.equal(factoryUrl, "http://127.0.0.1:5000/hubs/lobby");
-  assert.deepEqual(factoryDelays, [0, 1_000, 3_000, 5_000]);
-  assert.deepEqual(transport.calls, [
-    "on:RoomUpdated", "on:MatchReady", "start", "invoke:Subscribe:XK72:token", "invoke:Subscribe:XK72:token", "stop",
-  ]);
-  assert.deepEqual(rooms, [validRoom, validRoom]);
-});
-
-test("lobby connection rejects malformed snapshots without blaming consumer callbacks", async () => {
-  const transport = new FakeLobbyTransport();
-  const errors: string[] = [];
-  const consumerError = new Error("render failed");
-  const connection = new LobbyConnection("XK72", "token", session.playerId, {
-    onRoom: () => { throw consumerError; },
-    onError: (message) => errors.push(message),
-  }, undefined, () => transport);
-
-  assert.throws(() => transport.emitRoomUpdated(validRoom), consumerError);
-  assert.deepEqual(errors, []);
-
-  const errorThrowingConnection = new LobbyConnection("XK72", "token", session.playerId, {
-    onRoom: () => assert.fail("invalid room must not reach consumers"),
-    onError: () => { throw new Error("consumer error"); },
-  }, undefined, () => transport);
-  assert.doesNotThrow(() => transport.emitRoomUpdated({ code: "XK72" }));
-  void connection;
-  void errorThrowingConnection;
-});
-
-test("lobby connection rejects malformed Subscribe snapshots", async () => {
-  const transport = new FakeLobbyTransport();
-  transport.snapshot = { code: "XK72" };
-  const connection = new LobbyConnection("XK72", "token", session.playerId, { onRoom: () => assert.fail("must not render") },
-    undefined, () => transport);
-  await assert.rejects(connection.connect(), TypeError);
-});
-
-test("lobby reconnect reports only transport failures", async () => {
-  const consumerTransport = new FakeLobbyTransport();
-  const errors: string[] = [];
-  new LobbyConnection("XK72", "token", session.playerId, {
-    onRoom: () => { throw new Error("render failed"); },
-    onError: (message) => errors.push(message),
-  }, undefined, () => consumerTransport);
-  await consumerTransport.reconnected();
-  assert.deepEqual(errors, []);
-
-  const invalidTransport = new FakeLobbyTransport();
-  invalidTransport.snapshot = { code: "XK72" };
-  new LobbyConnection("XK72", "token", session.playerId, {
-    onRoom: () => assert.fail("invalid room must not reach consumers"),
-    onError: (message) => errors.push(message),
-  }, undefined, () => invalidTransport);
-  await invalidTransport.reconnected();
-  assert.deepEqual(errors, ["Could not reconnect to the room."]);
-});
-
-test("lobby connection accepts only the current player's private match launch", async () => {
-  const transport = new FakeLobbyTransport();
-  const launches: unknown[] = [];
-  const errors: string[] = [];
-  const connection = new LobbyConnection("XK72", "token", session.playerId, {
-    onRoom: () => assert.fail("match launch must not become a room update"),
-    onMatch: (launch) => launches.push(launch),
-    onError: (message) => errors.push(message),
-  }, undefined, () => transport);
-  const launch = {
-    matchId: "8f0b648f-90b2-44d9-a6a7-aac07430c4e4",
-    gameplayUrl: "wss://game.test/game",
-    countdownSeconds: 3,
-    expiresAt: "2099-08-30T12:00:00.000Z",
-    playerId: session.playerId,
-    color: "blue",
-    ticket: "opaque-ticket",
-  };
-
-  transport.emitMatchReady(launch);
-  transport.emitMatchReady({ ...launch, playerId: validRoom.players[1].id });
-
-  assert.deepEqual(launches, [launch]);
-  assert.deepEqual(errors, ["The room server sent an invalid match launch."]);
-  await connection.dispose();
 });

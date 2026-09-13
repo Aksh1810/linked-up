@@ -10,8 +10,7 @@
     "build": "npm run typecheck && vite build"
   },
   "dependencies": {
-    "@babylonjs/core": "9.23.0",
-    "@microsoft/signalr": "^10.0.11"
+    "@babylonjs/core": "9.23.0"
   },
   "devDependencies": {
     "typescript": "7.0.2",

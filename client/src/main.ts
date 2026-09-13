@@ -4,13 +4,14 @@ import { Game } from "./game";
 import type { GameplayConnectionIdentity } from "./gameplay-connection";
 import type { PlayerId } from "./gameplay-protocol";
 import { startLobby } from "./lobby.ts";
-import { countdownLabels, type MatchLaunch } from "./match-launch.ts";
+import type { PeerMatchLaunch } from "./lobby-connection.ts";
+import { countdownLabels } from "./match-launch.ts";
 
 function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-async function showMatchCountdown(launch: MatchLaunch): Promise<void> {
+async function showMatchCountdown(launch: { countdownSeconds: 3 }): Promise<void> {
   const app = document.querySelector<HTMLElement>("#app");
   const loading = document.querySelector<HTMLElement>("#loading");
   const loadingMessage = document.querySelector<HTMLElement>("#loading-message");
@@ -84,6 +85,9 @@ if (requestedPlayer === "blue" || requestedPlayer === "orange") {
 } else {
   await startLobby(location.pathname, async (launch) => {
     await showMatchCountdown(launch);
-    await startGame(launch.gameplayUrl, { matchId: launch.matchId, ticket: launch.ticket });
+    const pendingLaunch: PeerMatchLaunch = launch;
+    void pendingLaunch;
+    const loadingMessage = document.querySelector<HTMLElement>("#loading-message");
+    if (loadingMessage) loadingMessage.textContent = "Preparing browser-hosted match…";
   });
 }

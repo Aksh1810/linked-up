@@ -1,6 +1,5 @@
 import { LobbyApi, LobbyApiError } from "./lobby-api.ts";
-import { LobbyConnection } from "./lobby-connection.ts";
-import type { MatchLaunch } from "./match-launch.ts";
+import { LobbyConnection, type PeerMatchLaunch } from "./lobby-connection.ts";
 import {
   canSelectMap,
   canStart,
@@ -98,7 +97,7 @@ export function beginRetiredLeave<T>(
 
 export async function startLobby(
   pathname: string,
-  onMatch: (launch: MatchLaunch) => Promise<void>,
+  onMatch: (launch: PeerMatchLaunch) => Promise<void>,
 ): Promise<void> {
   const elements = lobbyElements();
   const app = required<HTMLElement>("#app");
@@ -182,7 +181,7 @@ export async function startLobby(
     return stopBarrier;
   };
 
-  const handoff = async (connection: LobbyConnection, launch: MatchLaunch, version: number): Promise<void> => {
+  const handoff = async (connection: LobbyConnection, launch: PeerMatchLaunch, version: number): Promise<void> => {
     if (handoffStarted || activeConnection !== connection || !isCurrentRoute(version)) return;
     handoffStarted = true;
     setBusy(true);
