@@ -125,6 +125,13 @@ test("room parsing admits only public match metadata for a full in-game room", (
   assert.throws(() => parseRoom({ ...validRoom, status: "starting", players: validRoom.players.slice(0, 1) }));
 });
 
+test("starting rooms require the generated public match id", () => {
+  const matchId = "4a342322-1f6d-4662-b6c1-9f48dd6015e9";
+  const starting = parseRoom({ ...validRoom, status: "starting", matchId });
+  assert.equal(starting.matchId, matchId);
+  assert.throws(() => parseRoom({ ...validRoom, status: "starting", matchId: null }));
+});
+
 test("room parsing enforces authoritative public room invariants", () => {
   assert.throws(() => parseRoom({ ...validRoom, id: "not-a-uuid" }));
   assert.throws(() => parseRoom({ ...validRoom, createdAt: "tomorrow" }));

@@ -11,6 +11,6 @@
     "target": "ES2022",
     "useDefineForClassFields": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/**/*.ts", "../shared/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "../shared/**/*.test.ts"]
 }
