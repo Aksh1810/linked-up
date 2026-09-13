@@ -5,6 +5,8 @@ import { GameplayConnection, type GameplayTransport } from "./gameplay-connectio
 import { startLobby } from "./lobby.ts";
 import { MatchOrchestrator } from "./match-orchestrator.ts";
 import { countdownLabels } from "./match-launch.ts";
+import { peerFailureMessage } from "./peer-status.ts";
+import { nativeDevelopmentPlayer, peerRuntimeSupport } from "./runtime-mode.ts";
 
 function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -16,7 +18,8 @@ async function showMatchCountdown(launch: { countdownSeconds: 3 }): Promise<void
   const loadingMessage = document.querySelector<HTMLElement>("#loading-message");
   const serverCommand = document.querySelector<HTMLElement>("#server-command");
   const returnLink = document.querySelector<HTMLAnchorElement>("#return-link");
-  if (!app || !loading || !loadingMessage || !serverCommand || !returnLink) {
+  const retryLink = document.querySelector<HTMLAnchorElement>("#retry-link");
+  if (!app || !loading || !loadingMessage || !serverCommand || !returnLink || !retryLink) {
     throw new Error("Linked-Up shell is incomplete");
   }
 
@@ -25,6 +28,7 @@ async function showMatchCountdown(launch: { countdownSeconds: 3 }): Promise<void
   loading.setAttribute("aria-hidden", "false");
   serverCommand.hidden = true;
   returnLink.hidden = true;
+  retryLink.hidden = true;
   for (const label of countdownLabels(launch.countdownSeconds)) {
     loadingMessage.textContent = label;
     await pause(1_000);
@@ -32,7 +36,23 @@ async function showMatchCountdown(launch: { countdownSeconds: 3 }): Promise<void
   loadingMessage.textContent = "Preparing secure connection…";
 }
 
-async function startGame(transport: GameplayTransport): Promise<void> {
+function showPeerOverlay(message: string, error: boolean): void {
+  const app = document.querySelector<HTMLElement>("#app");
+  const loading = document.querySelector<HTMLElement>("#loading");
+  const loadingMessage = document.querySelector<HTMLElement>("#loading-message");
+  const retryLink = document.querySelector<HTMLAnchorElement>("#retry-link");
+  const returnLink = document.querySelector<HTMLAnchorElement>("#return-link");
+  if (!app || !loading || !loadingMessage || !retryLink || !returnLink) return;
+  app.hidden = false;
+  loading.classList.toggle("error", error);
+  loading.setAttribute("aria-hidden", "false");
+  loadingMessage.textContent = message;
+  retryLink.href = location.href;
+  retryLink.hidden = !error;
+  returnLink.hidden = !error;
+}
+
+async function startGame(transport: GameplayTransport, peerHosted = false): Promise<void> {
   const app = document.querySelector<HTMLElement>("#app");
   const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
   const loading = document.querySelector<HTMLElement>("#loading");
@@ -42,9 +62,10 @@ async function startGame(transport: GameplayTransport): Promise<void> {
   const loadingMessage = document.querySelector<HTMLElement>("#loading-message");
   const serverCommand = document.querySelector<HTMLElement>("#server-command");
   const returnLink = document.querySelector<HTMLAnchorElement>("#return-link");
+  const retryLink = document.querySelector<HTMLAnchorElement>("#retry-link");
 
   if (!app || !canvas || !loading || !status || !playerLabel || !slotPicker || !loadingMessage ||
-      !serverCommand || !returnLink) throw new Error("Linked-Up shell is incomplete");
+      !serverCommand || !returnLink || !retryLink) throw new Error("Linked-Up shell is incomplete");
 
   app.hidden = false;
   playerLabel.value = "Match robot";
@@ -55,6 +76,8 @@ async function startGame(transport: GameplayTransport): Promise<void> {
     loading.classList.add("error");
     loadingMessage.textContent = message;
     serverCommand.hidden = message !== "Could not connect to the gameplay server.";
+    retryLink.href = location.href;
+    retryLink.hidden = !peerHosted;
     returnLink.hidden = false;
     loading.setAttribute("aria-hidden", "false");
   };
@@ -68,22 +91,39 @@ async function startGame(transport: GameplayTransport): Promise<void> {
         canvas.focus();
       },
       onStatus: (message) => { status.textContent = message; },
-      onError: showError,
+      onError: (message) => showError(peerHosted ? peerFailureMessage(message) : message),
     });
     window.addEventListener("beforeunload", () => game.dispose(), { once: true });
   } catch (error) {
     console.error("Could not start Linked-Up", error);
-    showError("Could not start the 3D scene.");
+    const reason = error instanceof Error ? error.message : error;
+    showError(peerHosted ? peerFailureMessage(reason) : "Could not start the 3D scene.");
   }
 }
 
-const requestedPlayer = new URLSearchParams(location.search).get("player");
-if (requestedPlayer === "blue" || requestedPlayer === "orange") {
+const requestedPlayer = nativeDevelopmentPlayer(location.search, import.meta.env as unknown as Record<string, unknown>);
+if (import.meta.env.DEV && requestedPlayer) {
   await startGame(new GameplayConnection("ws://127.0.0.1:9002/game", { player: requestedPlayer }));
 } else {
+  const runtimeFailure = peerRuntimeSupport(globalThis as unknown as Record<string, unknown>);
   await startLobby(location.pathname, async (launch, session) => {
-    const transport = await MatchOrchestrator.start(launch, session);
-    await showMatchCountdown(launch);
-    await startGame(transport);
-  });
+    showPeerOverlay(launch.role === "host"
+      ? "Waiting for every player to connect. Keep this tab open."
+      : "Connecting directly to the room host…", false);
+    try {
+      const transport = await MatchOrchestrator.start(launch, session);
+      await showMatchCountdown(launch);
+      if (launch.role === "host") {
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) return;
+          const status = document.querySelector<HTMLElement>("#status-label");
+          if (status) status.textContent = "Host tab is hidden; the match may pause for everyone.";
+        });
+      }
+      await startGame(transport, true);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : error;
+      showPeerOverlay(peerFailureMessage(reason), true);
+    }
+  }, runtimeFailure);
 }

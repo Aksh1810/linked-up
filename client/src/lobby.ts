@@ -98,6 +98,7 @@ export function beginRetiredLeave<T>(
 export async function startLobby(
   pathname: string,
   onMatch: (launch: PeerMatchLaunch, session: RoomSession) => Promise<void>,
+  startupFailure?: string,
 ): Promise<void> {
   const elements = lobbyElements();
   const app = required<HTMLElement>("#app");
@@ -187,9 +188,7 @@ export async function startLobby(
     if (!session) return;
     handoffStarted = true;
     setBusy(true);
-    const code = currentRoom?.code;
     advanceRoute();
-    if (code) clearRoomSession(sessionStorage, code);
     currentRoom = undefined;
     currentSession = undefined;
     await stopConnection();
@@ -318,6 +317,14 @@ export async function startLobby(
     setStatus("");
     setBusy(false);
   };
+
+  if (startupFailure) {
+    showLanding();
+    elements.create.disabled = true;
+    elements.playerCount.disabled = true;
+    setStatus(startupFailure);
+    return;
+  }
 
   elements.create.addEventListener("click", async () => {
     if (!canRunLobbyCommand(busy)) return;

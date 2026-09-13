@@ -157,6 +157,33 @@ body.lobby-active {
   font-weight: 700;
 }
 
+.peer-disclosure {
+  padding: 14px 16px;
+  border-left: 4px solid #ffb15c;
+  color: #dceef7;
+  background: rgb(6 20 34 / 55%);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.peer-disclosure strong { color: #ffdfbd; }
+.peer-disclosure p { margin: 5px 0 0; }
+.host-tab-note { margin: 0; color: #b9cbd8; font-size: 0.78rem; }
+
+.failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.failure-actions a {
+  padding: 10px 14px;
+  border: 1px solid currentColor;
+  color: #f4fbff;
+  font-weight: 800;
+}
+
 #lobby-shell button:focus-visible,
 #player-count:focus-visible,
 #room-map:focus-visible {

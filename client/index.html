@@ -21,6 +21,10 @@
           <option value="3">3 players</option>
           <option value="4">4 players</option>
         </select>
+        <div class="peer-disclosure" role="note">
+          <strong>A player hosts each match</strong>
+          <p>The room host runs the shared game and must keep this tab open. Players connect directly; strict VPN, school, or workplace networks may block a match because this free alpha does not use a relay server.</p>
+        </div>
         <button id="create-room" type="button">Create Room</button>
         <p id="landing-status" role="status"></p>
       </section>
@@ -43,6 +47,7 @@
           <button id="leave-room" type="button">Leave Room</button>
         </div>
         <p id="lobby-status" role="status"></p>
+        <p class="host-tab-note">If you are the host, keep this tab visible during the match.</p>
       </section>
     </main>
 
@@ -53,15 +58,7 @@
         aria-label="Linked-Up 3D base-camp prototype"
       ></canvas>
 
-      <nav id="slot-picker" class="slot-picker" aria-label="Choose local test player" hidden>
-        <p class="eyebrow">Choose your link</p>
-        <h2>Which robot are you?</h2>
-        <div>
-          <a class="blue-slot" href="?player=blue">Play as Blue</a>
-          <span aria-hidden="true"></span>
-          <a class="orange-slot" href="?player=orange">Play as Orange</a>
-        </div>
-      </nav>
+      <nav id="slot-picker" class="slot-picker" aria-label="Local development player" hidden></nav>
 
       <header class="title-plate" aria-label="Linked-Up">
         <span class="title-mark" aria-hidden="true">
@@ -146,7 +143,10 @@
         <span></span>
         <p id="loading-message">Powering up robot</p>
         <code id="server-command" hidden>./build/simulation/linked-up-server</code>
-        <a id="return-link" href="./" hidden>Choose another robot</a>
+        <div class="failure-actions">
+          <a id="retry-link" href="" hidden>Try again</a>
+          <a id="return-link" href="/" hidden>Return to lobby</a>
+        </div>
       </div>
     </div>
 

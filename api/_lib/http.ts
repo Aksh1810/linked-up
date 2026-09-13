@@ -1,6 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const MAX_BODY_BYTES = 65_536;
+const securityHeaders = {
+  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+} as const;
 
 export class HttpError extends Error {
   readonly status: number;
@@ -36,12 +43,12 @@ export async function readJson(request: Request): Promise<unknown> {
 export function jsonResponse(value: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(value), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers, ...securityHeaders },
   });
 }
 
 export function emptyResponse(status = 204, headers: HeadersInit = {}): Response {
-  return new Response(null, { status, headers: { "Cache-Control": "no-store", ...headers } });
+  return new Response(null, { status, headers: { "Cache-Control": "no-store", ...headers, ...securityHeaders } });
 }
 
 export function problemResponse(status: number, title: string): Response {
