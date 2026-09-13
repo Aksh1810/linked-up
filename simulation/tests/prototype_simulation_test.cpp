@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -538,9 +539,51 @@ void authored_route_registry_enforces_each_maps_composition() {
   assert(rejected);
 }
 
+void emit_parity_fixture() {
+  constexpr std::array<std::string_view, 4> maps{
+      "classic-ascent", "relay-ridge", "crane-shift", "windworks"};
+  constexpr std::array<RobotColor, 4> colors{
+      RobotColor::Blue, RobotColor::Orange, RobotColor::Green, RobotColor::Purple};
+  std::cout << std::fixed << std::setprecision(9) << '[';
+  bool first_case = true;
+  for (const auto map : maps) {
+    for (std::size_t roster_size = 2; roster_size <= 4; ++roster_size) {
+      std::vector<RobotColor> roster(colors.begin(), colors.begin() + roster_size);
+      PrototypeSimulation simulation(roster, linked_up::route_config(map));
+      for (int tick = 0; tick < 240; ++tick) {
+        for (std::size_t player = 0; player < roster.size(); ++player) {
+          const float move_x = static_cast<float>((tick / 60 + static_cast<int>(player)) % 3 - 1);
+          const float move_z = static_cast<float>((tick / 45 + static_cast<int>(player) * 2) % 3 - 1);
+          simulation.set_input(roster[player], {move_x, move_z, tick % 90 == static_cast<int>(player)});
+        }
+        simulation.step();
+      }
+      const auto snapshot = simulation.snapshot();
+      if (!first_case) std::cout << ',';
+      first_case = false;
+      std::cout << "{\"mapId\":\"" << map << "\",\"rosterSize\":" << roster_size
+                << ",\"tick\":" << snapshot.tick << ",\"players\":[";
+      for (std::size_t index = 0; index < snapshot.players.size(); ++index) {
+        if (index > 0) std::cout << ',';
+        const auto& player = snapshot.players[index];
+        std::cout << "{\"id\":\"" << linked_up::color_name(player.id)
+                  << "\",\"position\":[" << player.position.x << ',' << player.position.y << ','
+                  << player.position.z << "],\"velocity\":[" << player.velocity.x << ','
+                  << player.velocity.y << ',' << player.velocity.z << "]}";
+      }
+      std::cout << "]}";
+    }
+  }
+  std::cout << "]\n";
+}
+
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc == 2 && std::string_view(argv[1]) == "--parity-fixture") {
+    emit_parity_fixture();
+    return 0;
+  }
   movement_and_jump_are_authoritative();
   jumping_from_an_elevated_platform_is_authoritative();
   two_player_tether_hard_limit_is_authoritative();

@@ -1,4 +1,8 @@
 /build/
+/build-wasm/
+/build-wasm-debug/
+/build-wasm-asan/
+/build-native-parity/
 /.cache/
 /client/dist/
 /client/node_modules/

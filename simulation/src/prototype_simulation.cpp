@@ -23,6 +23,8 @@
 namespace linked_up {
 namespace {
 
+using SimulationJobSystem = JPH::JobSystemThreadPool;
+
 constexpr JPH::ObjectLayer kStaticLayer = 0;
 constexpr JPH::ObjectLayer kMovingLayer = 1;
 constexpr JPH::BroadPhaseLayer kStaticBroadPhase{0};
@@ -417,9 +419,14 @@ class PrototypeSimulation::Impl {
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
     allocator_ = std::make_unique<JPH::TempAllocatorMalloc>();
-    jobs_ = std::make_unique<JPH::JobSystemThreadPool>(
+    jobs_ = std::make_unique<SimulationJobSystem>(
+#ifdef __EMSCRIPTEN__
+        JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, 0
+#else
         JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers,
-        std::max(1u, std::thread::hardware_concurrency()) - 1);
+        std::max(1u, std::thread::hardware_concurrency()) - 1
+#endif
+    );
 
     physics_.Init(1024, 0, 1024, 1024, broad_phase_layers_, object_vs_broad_phase_, object_pairs_);
     physics_.SetGravity({0.0f, -9.81f, 0.0f});
@@ -918,7 +925,7 @@ class PrototypeSimulation::Impl {
   ObjectPairs object_pairs_;
   JPH::PhysicsSystem physics_;
   std::unique_ptr<JPH::TempAllocatorMalloc> allocator_;
-  std::unique_ptr<JPH::JobSystemThreadPool> jobs_;
+  std::unique_ptr<SimulationJobSystem> jobs_;
   JPH::BodyID floor_id_;
   std::vector<JPH::BodyID> player_ids_;
   std::vector<std::optional<JPH::BodyID>> obstacle_ids_;
