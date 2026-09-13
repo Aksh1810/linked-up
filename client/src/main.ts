@@ -1,10 +1,9 @@
 import "./styles.css";
 
 import { Game } from "./game";
-import type { GameplayConnectionIdentity } from "./gameplay-connection";
-import type { PlayerId } from "./gameplay-protocol";
+import { GameplayConnection, type GameplayTransport } from "./gameplay-connection";
 import { startLobby } from "./lobby.ts";
-import type { PeerMatchLaunch } from "./lobby-connection.ts";
+import { MatchOrchestrator } from "./match-orchestrator.ts";
 import { countdownLabels } from "./match-launch.ts";
 
 function pause(milliseconds: number): Promise<void> {
@@ -33,7 +32,7 @@ async function showMatchCountdown(launch: { countdownSeconds: 3 }): Promise<void
   loadingMessage.textContent = "Preparing secure connection…";
 }
 
-async function startGame(gameplayUrl: string, identity: GameplayConnectionIdentity): Promise<void> {
+async function startGame(transport: GameplayTransport): Promise<void> {
   const app = document.querySelector<HTMLElement>("#app");
   const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
   const loading = document.querySelector<HTMLElement>("#loading");
@@ -49,7 +48,7 @@ async function startGame(gameplayUrl: string, identity: GameplayConnectionIdenti
 
   app.hidden = false;
   playerLabel.value = "Match robot";
-  status.textContent = "Connecting to gameplay server";
+  status.textContent = "Connecting to match";
 
   const showError = (message: string): void => {
     status.textContent = message;
@@ -62,8 +61,7 @@ async function startGame(gameplayUrl: string, identity: GameplayConnectionIdenti
 
   try {
     const game = await Game.create(canvas, {
-      gameplayUrl,
-      identity,
+      transport,
       onReady: () => {
         loading.setAttribute("aria-hidden", "true");
         document.body.classList.add("ready");
@@ -81,13 +79,11 @@ async function startGame(gameplayUrl: string, identity: GameplayConnectionIdenti
 
 const requestedPlayer = new URLSearchParams(location.search).get("player");
 if (requestedPlayer === "blue" || requestedPlayer === "orange") {
-  await startGame("ws://127.0.0.1:9002/game", { player: requestedPlayer });
+  await startGame(new GameplayConnection("ws://127.0.0.1:9002/game", { player: requestedPlayer }));
 } else {
-  await startLobby(location.pathname, async (launch) => {
+  await startLobby(location.pathname, async (launch, session) => {
+    const transport = await MatchOrchestrator.start(launch, session);
     await showMatchCountdown(launch);
-    const pendingLaunch: PeerMatchLaunch = launch;
-    void pendingLaunch;
-    const loadingMessage = document.querySelector<HTMLElement>("#loading-message");
-    if (loadingMessage) loadingMessage.textContent = "Preparing browser-hosted match…";
+    await startGame(transport);
   });
 }

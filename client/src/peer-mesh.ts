@@ -1,4 +1,4 @@
-import type { ClientInput, ServerSnapshot } from "./gameplay-protocol.ts";
+import type { ClientInput, PlayerId, ServerSnapshot } from "./gameplay-protocol.ts";
 import type { MapId } from "./lobby-state.ts";
 import { encodePeerMessage, parsePeerMessage, type PeerControlMessage } from "./peer-protocol.ts";
 import type { SignalEnvelope } from "../../shared/signaling-contract.ts";
@@ -61,6 +61,8 @@ export interface HostMeshHandlers {
   onFailure?(playerId: string, reason: string): void;
 }
 
+export interface HostGuestIdentity { id: string; color: PlayerId; }
+
 interface HostPeer {
   connection: MeshPeerConnection;
   channels: Record<"control" | "input" | "snapshot", MeshDataChannel>;
@@ -74,6 +76,7 @@ interface HostPeer {
 export class HostPeerMesh {
   readonly #hostId: string;
   readonly #guestIds: readonly string[];
+  readonly #guestColors = new Map<string, PlayerId>();
   readonly #mapId: MapId;
   readonly #signaling: PeerSignaling;
   readonly #handlers: HostMeshHandlers;
@@ -83,7 +86,7 @@ export class HostPeerMesh {
 
   constructor(
     hostId: string,
-    guestIds: readonly string[],
+    guests: readonly (string | HostGuestIdentity)[],
     mapId: MapId,
     signaling: PeerSignaling,
     handlers: HostMeshHandlers = {},
@@ -91,7 +94,10 @@ export class HostPeerMesh {
     timers: MeshTimers = browserTimers,
   ) {
     this.#hostId = hostId;
-    this.#guestIds = [...guestIds];
+    this.#guestIds = guests.map((guest) => typeof guest === "string" ? guest : guest.id);
+    for (const guest of guests) {
+      if (typeof guest !== "string") this.#guestColors.set(guest.id, guest.color);
+    }
     this.#mapId = mapId;
     this.#signaling = signaling;
     this.#handlers = handlers;
@@ -195,6 +201,8 @@ export class HostPeerMesh {
   }
 
   #colorForGuest(guestId: string): "blue" | "orange" | "green" | "purple" {
+    const assigned = this.#guestColors.get(guestId);
+    if (assigned) return assigned;
     const index = this.#guestIds.indexOf(guestId) + 1;
     return (["blue", "orange", "green", "purple"] as const)[Math.min(index, 3)]!;
   }

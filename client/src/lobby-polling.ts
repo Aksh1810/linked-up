@@ -2,6 +2,8 @@ import { LobbyApi, type NotModified } from "./lobby-api.ts";
 import { normalizeRoomCode, type MapId, type RoomPlayer, type RoomState } from "./lobby-state.ts";
 
 export interface PeerMatchLaunch {
+  protocol: 1;
+  roomCode: string;
   matchId: string;
   mapId: MapId;
   players: RoomPlayer[];
@@ -154,6 +156,8 @@ export class LobbyPollingConnection {
     }
     this.#launchedMatchId = room.matchId;
     this.#handlers.onMatch?.({
+      protocol: 1,
+      roomCode: room.code,
       matchId: room.matchId,
       mapId: room.mapId,
       players: room.players.map((player) => ({ ...player })),

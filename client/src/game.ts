@@ -16,7 +16,7 @@ import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 
-import { GameplayConnection, type GameplayConnectionIdentity } from "./gameplay-connection";
+import type { GameplayTransport } from "./gameplay-connection";
 import type {
   ClientInput,
   NetworkObstacleState,
@@ -51,8 +51,7 @@ interface ObstacleVisual {
 }
 
 export interface GameOptions {
-  gameplayUrl: string;
-  identity: GameplayConnectionIdentity;
+  transport: GameplayTransport;
   onReady(): void;
   onStatus(message: string): void;
   onError(message: string): void;
@@ -71,7 +70,7 @@ export class Game {
   readonly #robots = new Map<PlayerId, RobotVisual>();
   readonly #obstacles = new Map<string, ObstacleVisual>();
   readonly #tether: LinesMesh;
-  readonly #connection: GameplayConnection;
+  readonly #connection: GameplayTransport;
   readonly #options: GameOptions;
   readonly #speedLabel: HTMLOutputElement;
   readonly #tickLabel: HTMLOutputElement;
@@ -103,7 +102,9 @@ export class Game {
       antialias: true,
       adaptToDeviceRatio: true,
     });
-    return new Game(canvas, engine, options);
+    const game = new Game(canvas, engine, options);
+    await game.#connect();
+    return game;
   }
 
   private constructor(canvas: HTMLCanvasElement, engine: AbstractEngine, options: GameOptions) {
@@ -180,23 +181,26 @@ export class Game {
     this.#routeLabel = routeLabel;
     this.#tetherLabel = tetherLabelElement;
 
-    this.#connection = new GameplayConnection(options.gameplayUrl, options.identity, {
+    this.#connection = options.transport;
+
+    window.addEventListener("resize", this.#resize);
+    this.#engine.runRenderLoop(this.#frame);
+  }
+
+  async #connect(): Promise<void> {
+    await this.#connection.connect({
       onWelcome: this.#onWelcome,
       onSnapshot: this.#onSnapshot,
-      onError: options.onError,
+      onError: this.#options.onError,
       onStatus: (status) => {
         const text = status === "connecting"
           ? "Connecting to gameplay server"
           : status === "connected"
             ? "Connected to gameplay server"
             : "Gameplay server disconnected";
-        options.onStatus(text);
+        this.#options.onStatus(text);
       },
     });
-
-    window.addEventListener("resize", this.#resize);
-    this.#engine.runRenderLoop(this.#frame);
-    this.#connection.connect();
   }
 
   dispose(): void {

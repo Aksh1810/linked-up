@@ -143,6 +143,8 @@ test("launches the peer match exactly once on the first starting snapshot", asyn
   await connection.connect();
   await scheduler.runNext();
   assert.deepEqual(launches, [{
+    protocol: 1,
+    roomCode: "XK72",
     matchId: starting.matchId,
     mapId: "classic-ascent",
     players: starting.players,

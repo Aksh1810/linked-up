@@ -11,20 +11,25 @@ export type GameplayConnectionIdentity =
   | { matchId: string; ticket: string }
   | { player: PlayerId };
 
-export interface GameplayConnectionHandlers {
+export interface GameplayTransportHandlers {
   onWelcome(message: WelcomeMessage): void;
   onSnapshot(message: ServerSnapshot): void;
   onError(message: string): void;
   onStatus(status: "connecting" | "connected" | "disconnected"): void;
 }
 
-export class GameplayConnection {
+export interface GameplayTransport {
+  connect(handlers: GameplayTransportHandlers): void | Promise<void>;
+  sendInput(input: ClientInput): boolean;
+  dispose(): void;
+}
+
+export class GameplayConnection implements GameplayTransport {
   readonly #url: URL;
-  readonly #handlers: GameplayConnectionHandlers;
   #socket?: WebSocket;
   #roster?: readonly PlayerId[];
 
-  constructor(url: string, identity: GameplayConnectionIdentity, handlers: GameplayConnectionHandlers) {
+  constructor(url: string, identity: GameplayConnectionIdentity) {
     this.#url = new URL(url, window.location.href);
     if ("matchId" in identity) {
       this.#url.searchParams.set("match", identity.matchId);
@@ -32,18 +37,17 @@ export class GameplayConnection {
     } else {
       this.#url.searchParams.set("player", identity.player);
     }
-    this.#handlers = handlers;
   }
 
-  connect(): void {
+  connect(handlers: GameplayTransportHandlers): void {
     if (this.#socket) return;
-    this.#handlers.onStatus("connecting");
+    handlers.onStatus("connecting");
     const socket = new WebSocket(this.#url);
     this.#socket = socket;
-    socket.onopen = () => this.#handlers.onStatus("connected");
+    socket.onopen = () => handlers.onStatus("connected");
     socket.onmessage = ({ data }) => {
       if (typeof data !== "string") {
-        this.#handlers.onError("Gameplay server sent a binary message.");
+        handlers.onError("Gameplay server sent a binary message.");
         socket.close(4002, "invalid server message");
         return;
       }
@@ -51,22 +55,22 @@ export class GameplayConnection {
         const message = parseServerMessage(data, this.#roster);
         if (message.type === "welcome") {
           this.#roster = message.players;
-          this.#handlers.onWelcome(message);
+          handlers.onWelcome(message);
         }
         if (message.type === "snapshot") {
           if (!this.#roster) throw new Error("roster mismatch");
-          this.#handlers.onSnapshot(message);
+          handlers.onSnapshot(message);
         }
-        if (message.type === "error") this.#handlers.onError(message.message);
+        if (message.type === "error") handlers.onError(message.message);
       } catch {
-        this.#handlers.onError("Gameplay server sent an invalid message.");
+        handlers.onError("Gameplay server sent an invalid message.");
         socket.close(4002, "invalid server message");
       }
     };
-    socket.onerror = () => this.#handlers.onError("Could not connect to the gameplay server.");
+    socket.onerror = () => handlers.onError("Could not connect to the gameplay server.");
     socket.onclose = () => {
       this.#socket = undefined;
-      this.#handlers.onStatus("disconnected");
+      handlers.onStatus("disconnected");
     };
   }
 
