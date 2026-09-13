@@ -29,6 +29,14 @@
   ],
   "rewrites": [
     {
+      "source": "/api/rooms/:roomId/:action",
+      "destination": "/api/room?__roomId=:roomId&__roomAction=:action"
+    },
+    {
+      "source": "/api/rooms/:roomId",
+      "destination": "/api/room?__roomId=:roomId"
+    },
+    {
       "source": "/((?!api(?:/|$)|assets(?:/|$)).*)",
       "destination": "/index.html"
     }

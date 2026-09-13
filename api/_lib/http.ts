@@ -71,6 +71,23 @@ export function toRequest(request: VercelRequest): Request {
   });
 }
 
+const roomActions = new Set(["join", "map", "signals", "start"]);
+
+export function roomActionRequest(request: Request): Request {
+  const url = new URL(request.url);
+  const roomId = url.searchParams.get("__roomId");
+  const action = url.searchParams.get("__roomAction");
+  if (!roomId || !/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/.test(roomId)) return request;
+  if (action && !roomActions.has(action)) return request;
+
+  url.searchParams.delete("__roomId");
+  url.searchParams.delete("__roomAction");
+  url.searchParams.delete("roomId");
+  url.searchParams.delete("action");
+  url.pathname = `/api/rooms/${roomId}${action ? `/${action}` : ""}`;
+  return new Request(url, request);
+}
+
 export async function sendVercelResponse(response: VercelResponse, result: Response): Promise<void> {
   response.status(result.status);
   result.headers.forEach((value, key) => response.setHeader(key, value));

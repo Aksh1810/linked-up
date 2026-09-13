@@ -1,10 +1,14 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { createClient, type RedisClientType } from "redis";
 
 import { parseSignalEnvelope, type SignalEnvelope } from "../../shared/signaling-contract.ts";
 import type { SignalReadResult, SignalStore } from "./signal-store.ts";
 
 const SIGNAL_TTL_SECONDS = 7_200;
+
+export function parseStoredSignalEnvelope(value: string): SignalEnvelope {
+  return parseSignalEnvelope(JSON.parse(value));
+}
 
 export class RedisSignalStore implements SignalStore {
   readonly #client: RedisClientType;
@@ -17,9 +21,9 @@ export class RedisSignalStore implements SignalStore {
 
   static fromEnvironment(environment: NodeJS.ProcessEnv = process.env): RedisSignalStore {
     const url = environment.REDIS_URL;
-    const secret = environment.SIGNAL_KEY_SECRET;
-    if (!url || !secret || secret.length < 32) throw new Error("Secure signaling Redis configuration is required.");
+    if (!url) throw new Error("REDIS_URL is required for signaling.");
     if (new URL(url).protocol !== "rediss:") throw new Error("Redis TLS is required.");
+    const secret = createHash("sha256").update("linked-up/signaling/v1\0").update(url).digest("hex");
     return new RedisSignalStore(createClient({ url }) as RedisClientType, secret);
   }
 
@@ -48,7 +52,7 @@ export class RedisSignalStore implements SignalStore {
     await this.#client.expire(key, SIGNAL_TTL_SECONDS);
     const signals = entries.map((entry) => ({
       cursor: entry.id,
-      envelope: parseSignalEnvelope(entry.message.envelope),
+      envelope: parseStoredSignalEnvelope(entry.message.envelope),
     }));
     return { signals, cursor: signals.at(-1)?.cursor ?? after };
   }

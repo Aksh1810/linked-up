@@ -1,4 +1,5 @@
 /build/
+/build*/
 /build-wasm/
 /build-wasm-debug/
 /build-wasm-asan/
@@ -18,3 +19,4 @@ docs/
 .cursorrules
 .worktrees/
 .vercel
+.env*.local

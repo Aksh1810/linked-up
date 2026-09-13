@@ -44,6 +44,18 @@ export async function verifyProjectFiles(root) {
   if (!rewrite || typeof rewrite.source !== "string" || !rewrite.source.includes("?!api") || !rewrite.source.includes("assets")) {
     errors.push("The SPA rewrite must exclude API and static assets.");
   }
+  const roomActionRewrite = Array.isArray(config.rewrites)
+    ? config.rewrites.find((item) => item.source === "/api/rooms/:roomId/:action")
+    : undefined;
+  if (roomActionRewrite?.destination !== "/api/room?__roomId=:roomId&__roomAction=:action") {
+    errors.push("Nested room actions must route through the room Function.");
+  }
+  const roomRewrite = Array.isArray(config.rewrites)
+    ? config.rewrites.find((item) => item.source === "/api/rooms/:roomId")
+    : undefined;
+  if (roomRewrite?.destination !== "/api/room?__roomId=:roomId") {
+    errors.push("Room reads must route through the room Function.");
+  }
   const headers = Array.isArray(config.headers) ? config.headers : [];
   const assetCache = headers.find((item) => item.source === "/assets/(.*)");
   if (!assetCache || !JSON.stringify(assetCache).includes("immutable")) errors.push("Assets need immutable caching.");
@@ -81,9 +93,15 @@ export async function verifyVercelOutput(root) {
     .filter((path) => path.endsWith(".vc-config.json"))
     .map((path) => relative(join(root, "functions"), dirname(path)))
     .sort();
-  const expectedFunctions = [join("api", "rooms", "[...path].func"), join("api", "rooms", "index.func")].sort();
+  const expectedFunctions = [join("api", "room.func"), join("api", "rooms", "index.func")].sort();
   if (JSON.stringify(functions) !== JSON.stringify(expectedFunctions)) {
     errors.push(`Expected only the room API Functions; found ${functions.join(", ") || "none"}.`);
+  }
+  for (const path of functionFiles.filter((item) => extname(item) === ".js")) {
+    const source = await readFile(path, "utf8");
+    if (/(?:\bfrom\s+|\bimport\s*)["'][^"']+\.ts["']/.test(source)) {
+      errors.push(`Built Function retained a TypeScript import in ${relative(join(root, "functions"), path)}.`);
+    }
   }
   let configText = "";
   try { configText = (await readFile(join(root, "config.json"), "utf8")).toLowerCase(); }
@@ -93,6 +111,9 @@ export async function verifyVercelOutput(root) {
     errors.push("Built CSP blocks the Wasm worker.");
   }
   if (!configText.includes("immutable")) errors.push("Built assets are not immutable.");
+  if (!configText.includes("__roomaction") || !configText.includes("__roomid")) {
+    errors.push("Built output lacks the public room rewrites.");
+  }
   for (const path of staticFiles.filter((item) => [".html", ".js", ".css"].includes(extname(item)))) {
     const text = await readFile(path, "utf8");
     for (const value of forbidden) {

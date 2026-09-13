@@ -17,22 +17,26 @@ test("project config builds the SPA and preserves functions with safe headers", 
 
   const ignored = await readFile(join(root, ".vercelignore"), "utf8");
   assert.match(ignored, /\*\*\/\*\.test\.ts/);
+  assert.match(ignored, /build\*\/\*\*/);
 });
 
 test("output verifier checks SPA routes, functions, Wasm, headers, and bypass absence", async () => {
   const root = await mkdtemp(join(tmpdir(), "linked-up-vercel-output-"));
   await mkdir(join(root, "static", "assets"), { recursive: true });
   await mkdir(join(root, "functions", "api", "rooms", "index.func"), { recursive: true });
-  await mkdir(join(root, "functions", "api", "rooms", "[...path].func"), { recursive: true });
+  await mkdir(join(root, "functions", "api", "room.func"), { recursive: true });
   await writeFile(join(root, "static", "index.html"), "<main>Linked-Up</main>");
   await writeFile(join(root, "static", "assets", "simulation.wasm"), new Uint8Array([0, 97, 115, 109]));
   await writeFile(join(root, "functions", "api", "rooms", "index.func", ".vc-config.json"), "{}");
-  await writeFile(join(root, "functions", "api", "rooms", "[...path].func", ".vc-config.json"), "{}");
+  await writeFile(join(root, "functions", "api", "room.func", ".vc-config.json"), "{}");
+  await writeFile(join(root, "functions", "api", "rooms", "index.func", "index.js"), "import './room.js';");
   await writeFile(join(root, "config.json"), JSON.stringify({
     version: 3,
     routes: [
       { src: "/assets/(.*)", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
       { src: "/api/(.*)", dest: "/api/$1" },
+      { src: "/api/rooms/([^/]+)/([^/]+)", dest: "/api/room?__roomId=$1&__roomAction=$2" },
+      { src: "/api/rooms/([^/]+)", dest: "/api/room?__roomId=$1" },
       { src: "/(.*)", headers: {
         "content-security-policy": "default-src 'self'; worker-src 'self'; script-src 'self' 'wasm-unsafe-eval'",
         "x-content-type-options": "nosniff", "x-frame-options": "DENY",
@@ -42,6 +46,9 @@ test("output verifier checks SPA routes, functions, Wasm, headers, and bypass ab
     ],
   }));
   assert.deepEqual(await verifyVercelOutput(root), { valid: true, errors: [] });
+  await writeFile(join(root, "functions", "api", "rooms", "index.func", "index.js"), "import './room.ts';");
+  assert.equal((await verifyVercelOutput(root)).valid, false);
+  await writeFile(join(root, "functions", "api", "rooms", "index.func", "index.js"), "import './room.js';");
   await writeFile(join(root, "static", "index.html"), "ws://127.0.0.1:9002");
   assert.equal((await verifyVercelOutput(root)).valid, false);
 });
