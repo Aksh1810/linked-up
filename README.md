@@ -20,7 +20,9 @@ Host Web Worker ── WebAssembly/Jolt ──> authoritative snapshots at 20 Hz
 
 This keeps the alpha on Vercel's Hobby-compatible request model: no permanent game server and no long-running Vercel Function. Direct WebRTC has no TURN relay, so restrictive VPN, school, workplace, carrier, or symmetric-NAT combinations may fail to connect. The lobby tells players this before room creation.
 
-See [architecture](docs/architecture.md), [networking](docs/networking.md), and [game design](docs/game-design.md).
+The public alpha is live at [vercel-public-alpha-three.vercel.app](https://vercel-public-alpha-three.vercel.app).
+
+See the [deployment runbook](docs/deployment.md), [architecture](docs/architecture.md), [networking](docs/networking.md), and [game design](docs/game-design.md).
 
 ## Deploy prerequisites
 
@@ -64,5 +66,6 @@ To rebuild the browser simulation, install Emscripten and run `scripts/build-was
 - Type check: `npm --prefix client run typecheck`
 - Wasm/native parity: `node simulation/wasm/wasm_bridge_test.mjs`
 - Vercel config/artifact: `node --test scripts/verify-vercel-build.test.mjs`
+- Deployed room lifecycle: `node scripts/deployed-smoke.mjs https://your-deployment.example`
 
 The Redis concurrency test runs when `TEST_REDIS_URL` is set; otherwise it is reported as skipped.
