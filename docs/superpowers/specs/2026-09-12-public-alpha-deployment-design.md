@@ -132,9 +132,10 @@ The host creates one `RTCPeerConnection` per guest. Each connection has:
 
 Inputs and snapshots use bounded binary messages rather than JSON once the
 connection is established. Control messages remain small validated JSON.
-Signaling uses a configurable STUN server list and no TURN credentials in the
-free alpha. A connection timeout produces a clear message explaining that the
-network may not support direct peer-to-peer play.
+Signaling uses a configurable STUN server list, defaults to
+`stun:stun.cloudflare.com:3478`, and has no TURN credentials in the free alpha.
+A connection timeout produces a clear message explaining that the network may
+not support direct peer-to-peer play.
 
 ## WebAssembly simulation
 
