@@ -1,215 +1,293 @@
-# Public Alpha Deployment Design
+# Vercel-Only Public Alpha Design
 
 ## Status
 
-Approved architecture: Vercel hosts the public browser client. Fly.io hosts the
-persistent ASP.NET Core lobby and C++ authoritative simulation. Railway is not
-used. A managed Upstash Redis database stores temporary room state.
+Approved architecture: the public alpha runs on the Vercel Hobby plan without
+Railway, Fly.io, or another always-on application server. Vercel serves the Vite
+client and short-lived TypeScript Functions. Redis for Vercel stores temporary
+rooms and WebRTC signaling. The host player's browser runs the authoritative C++
+simulation compiled to WebAssembly.
 
-This design targets a public multiplayer alpha. It does not claim durable match
-recovery or horizontal game-server scaling.
+This is a personal, non-commercial alpha. It deliberately accepts the
+reliability and trust limitations of free peer-to-peer networking.
 
 ## Goals
 
 - Let two to four users on different networks create, join, select a map, and
-  complete a match through public HTTPS links.
-- Preserve the existing authoritative C++ simulation and ASP.NET Core lobby.
-- Use Vercel for the public Vite client and invite routes.
-- Keep Redis and lobby-to-simulation traffic off the public Internet.
-- Ensure private admission credentials do not appear in URLs or normal logs.
-- Provide repeatable builds, health checks, smoke tests, and deployment steps.
+  complete a match through one public Vercel URL.
+- Preserve the existing Jolt-based C++ physics and authored maps by compiling
+  the simulation core to WebAssembly.
+- Require no paid or continuously running server.
+- Keep room credentials out of public room state, URLs, and normal logs.
+- Keep local native server development available while production uses WebRTC.
+- Fit normal small personal playtests within Vercel Hobby usage limits.
 
-## Non-goals
+## Accepted limitations
 
-- Accounts, matchmaking, progression, chat, payments, or persistent history.
-- Surviving a simulation deployment or crash without ending active matches.
-- Multiple API or simulation replicas in the initial alpha.
-- Multi-region matchmaking or match migration.
-- Replacing the existing C++ physics implementation with serverless code.
+- The room host is authoritative and can manipulate local match state.
+- The match ends if the host closes, reloads, sleeps, or loses connectivity.
+- Some school, office, carrier-grade NAT, VPN, or restrictive mobile networks
+  will fail to establish peer-to-peer connectivity because the free design has
+  STUN but no TURN relay.
+- The host must keep the game tab open and the device awake during a match.
+- Lobby state is temporary and expires after two hours.
+- The design is for personal, non-commercial use under Vercel Hobby terms.
+- A larger public or commercial release will require paid relay and persistent
+  authoritative game-server infrastructure.
 
 ## Architecture
 
 ```text
-Browser
-  |-- HTTPS ----------> Vercel Vite client
-  |-- HTTPS/SignalR --> Fly.io lobby API
-  `-- WSS ------------> Fly.io C++ simulation
+Browser ---------------- HTTPS ----------------> Vercel Vite client
+Browser -- short HTTPS requests and polling --> Vercel Functions
+Vercel Functions ---------- Redis -----------> Redis for Vercel
 
-Fly.io lobby API
-  |-- TLS ------------> Upstash Redis
-  `-- private h2c ----> Fly.io C++ simulation:50051
+Host browser
+  |-- C++/Jolt simulation compiled to WebAssembly in a Web Worker
+  |-- local input ----------------------------> authoritative simulation
+  `-- WebRTC data channels <-----------------> guest browsers
+
+Guest browsers
+  |-- input intents --------------------------> host browser
+  `-- snapshots <----------------------------- host browser
 ```
 
-The frontend has one stable Vercel production URL. The lobby API and simulation
-each have a stable Fly.io public hostname. The browser reaches the lobby over
-HTTPS and the simulation over WSS. Only the lobby reaches the coordination gRPC
-port, using Fly.io private DNS. Redis accepts TLS-authenticated traffic from the
-lobby and is never called by browsers.
+Vercel Functions own temporary lobby rules and WebRTC signaling but never run a
+simulation loop or hold a long connection. Functions are stateless between
+requests. Redis is the source of truth for rooms, hashed room-session tokens,
+rate-limit counters, and short-lived signaling envelopes.
 
-The initial release runs exactly one lobby Machine and one simulation Machine in
-the same Fly.io region. Auto-stop is disabled for both. This preserves the
-current in-process lobby presence and in-memory match ownership assumptions.
+The host runs one deterministic simulation inside a dedicated Web Worker. Each
+guest has a direct WebRTC connection to the host. Guests send input intent; the
+host applies every player's intent at 60 Hz and broadcasts authoritative
+snapshots at 20 Hz. The existing browser interpolation and local prediction
+continue to consume the snapshot protocol.
 
-## Deployment units
+## Vercel deployment
 
-### Vercel client
+The repository root is the Vercel project root. `vercel.json` defines:
 
-The Vercel project builds `client/` with `npm run build` and serves `client/dist`.
-A SPA rewrite sends all non-asset paths, including `/room/:code`, to
-`index.html`. `VITE_LOBBY_API_URL` is set at build time to the Fly.io lobby URL.
-The direct `?player=` development bypass is unavailable in production builds.
+- the client build command and `client/dist` output;
+- SPA fallback routing for `/room/:code`;
+- `/api/*` TypeScript Functions;
+- immutable caching for hashed assets and the WebAssembly binary;
+- security headers compatible with Babylon.js, WebAssembly, and WebRTC.
 
-### Fly.io lobby API
+All browser API calls use same-origin `/api` paths. No production hostname is
+compiled into the client, so preview and production deployments work without
+CORS configuration.
 
-A multi-stage Dockerfile builds and publishes the ASP.NET Core API. The runtime
-listens on `0.0.0.0` at its configured HTTP port. Configuration is supplied only
-through environment variables or Fly secrets:
+The direct native `?player=` development bypass is available only under Vite
+development mode. Production builds ignore it and always use the lobby.
 
-- `LinkedUp__ClientOrigin`: exact stable Vercel production origin.
-- `LinkedUp__Redis`: Upstash Redis TLS connection configuration.
-- `Simulation__Address`: private h2c address for the simulation service.
-- `ASPNETCORE_URLS`: public HTTP listener inside the Machine.
+## Serverless lobby
 
-The API exposes `/health/live` and `/health/ready`. Fly.io uses readiness for its
-health check. CORS allows credentials only from the exact Vercel production
-origin.
+The production lobby is implemented in focused TypeScript modules shared by
+Vercel Functions. It preserves the existing public room contract and rules:
 
-### Fly.io authoritative simulation
+- capacities of two to four;
+- unambiguous four-character room codes;
+- ordered Blue, Orange, Green, and Purple slots;
+- host-only map selection and start;
+- host migration while waiting;
+- start only when all slots are occupied and recently present;
+- selected map included in the immutable match launch;
+- two-hour sliding room expiry.
 
-A multi-stage Dockerfile builds the C++ server and copies only its runtime
-binary and required shared libraries into the final image. Runtime settings
-replace compile-time loopback assumptions:
+Each create or join response includes an opaque per-player session token. The
+browser stores it in `sessionStorage`; Redis stores only its SHA-256 digest.
+Authenticated mutations send the token in `X-Player-Token`, never in a URL.
 
-- public gameplay bind address and port;
-- private coordination bind address and port;
-- public `wss://` gameplay URL returned to the lobby;
-- production flag controlling the local development bypass.
+Lobby clients poll room state with conditional requests. Responses carry the
+room version as an ETag, and unchanged polls return `304`. Waiting clients poll
+once per second while visible and back off while hidden. Presence is a Redis
+timestamp refreshed by polling rather than an in-process SignalR connection.
 
-The gameplay listener binds publicly inside the Machine. The gRPC coordination
-listener is reachable only over Fly.io private networking. `/health` is the
-public health-check endpoint. Auto-stop is disabled because active matches and
-fixed simulation ticks live in process memory.
+Redis transactions or Lua scripts make room creation, joining, leaving, host
+migration, map changes, and transition to `starting` atomic. A start operation
+creates a match identifier and changes the room to `starting`; the host begins
+WebRTC negotiation. The room becomes `inGame` after every guest has confirmed
+its control and snapshot channels.
 
-### Managed Redis
+## WebRTC signaling
 
-An Upstash Redis database is provisioned through the Vercel Marketplace or
-Upstash console. The lobby uses its TLS endpoint and password. Redis stores only
-temporary rooms, hashed lobby session tokens, and their existing TTLs. Raw game
-tickets and snapshots remain outside Redis.
+Vercel Functions exchange opaque signaling envelopes through Redis:
 
-## Production networking changes
+- `POST /api/rooms/:code/signals` appends an authenticated offer, answer, ICE
+  candidate, readiness, or failure envelope for one recipient.
+- `GET /api/rooms/:code/signals?after=:cursor` returns only envelopes addressed
+  to the authenticated player after the supplied cursor.
+- Signaling entries expire with the room and are deleted once acknowledged.
 
-Local defaults remain unchanged for developers, but every public address and
-bind address becomes configuration-driven. Startup fails with a clear message
-when production mode receives a loopback public gameplay URL, a non-TLS Redis
-connection, or an HTTP/WSS mismatch.
+Payloads have strict schemas and size limits. A player can send only signaling
+messages for its own room identity and only to another current room member.
+Rate limits prevent signaling amplification.
 
-The client accepts HTTPS lobby URLs and WSS gameplay URLs in production. Mixed
-content is rejected before attempting a connection. The server trusts only the
-configured client origin. No wildcard CORS origin is introduced.
+The host creates one `RTCPeerConnection` per guest. Each connection has:
 
-## WebSocket admission and reconnection
+- a reliable ordered `control` data channel for identity, map, readiness,
+  completion, and errors;
+- a low-latency unordered `input` channel for guest input intents;
+- a low-latency unordered `snapshot` channel for authoritative snapshots.
 
-The current query-string ticket transport is replaced for normal matches.
-The browser opens the clean `/game` WSS endpoint and immediately sends:
+Inputs and snapshots use bounded binary messages rather than JSON once the
+connection is established. Control messages remain small validated JSON.
+Signaling uses a configurable STUN server list and no TURN credentials in the
+free alpha. A connection timeout produces a clear message explaining that the
+network may not support direct peer-to-peer play.
 
-```json
-{"type":"authenticate","matchId":"...","ticket":"..."}
+## WebAssembly simulation
+
+A new Emscripten build target contains only `PrototypeSimulation`, authored
+route data, Jolt Physics, and a narrow C ABI wrapper. It excludes Crow, gRPC,
+protobuf, OpenSSL, the native match manager, and native server entrypoints.
+
+The wrapper owns one match and exposes operations equivalent to:
+
+```text
+create(map_id, ordered_roster)
+set_input(player_index, sequence, move_x, move_z, jump)
+step()
+snapshot_size()
+write_snapshot(destination, capacity)
+destroy()
 ```
 
-Until authentication succeeds, the connection cannot send inputs or receive
-match snapshots. Authentication has a short timeout and stable error messages.
-The server stores only credential digests and never logs the authentication
-payload. This prevents edge proxies and access logs from recording tickets in
-request URLs.
+The worker loads the WebAssembly module, creates the selected route, accepts
+validated input messages from the UI and peer layer, and advances with a
+monotonic accumulator. It caps catch-up work after a stalled tab to protect the
+browser. Snapshots retain the existing wire semantics: tick, acknowledgements,
+players, tether tension, match state, checkpoints, and obstacle transforms.
 
-After admission, the server returns an opaque resume credential in the welcome
-message. The browser retains it only in memory and reconnects with bounded
-exponential backoff after a transient disconnect. Successful resumption rotates
-the credential. Resume credentials expire when the match expires or completes.
-A page reload does not resume the match in the initial alpha.
+Native and WebAssembly builds use Jolt's cross-platform deterministic option and
+the same route/configuration source. A parity fixture feeds both builds an
+identical roster and input sequence and compares normalized snapshots at fixed
+ticks. The native C++ server remains the local reference implementation and can
+still be run for development tests.
 
-The loopback-only development bypass may retain its current query parameter,
-but it is compiled or configured out of production.
+## Host and guest runtime flow
 
-## Abuse controls and security
+### Host
 
-- Apply per-IP rate limits to room creation, room lookup, join, map change, and
-  start operations. Existing authenticated room semantics still apply.
-- Retain the C++ input size, validation, ordering, and 120-message-per-second
-  limits.
-- Reject untrusted forwarded headers unless they came through the known platform
-  proxy configuration.
-- Do not include session tokens, tickets, resume credentials, Redis credentials,
-  or full WebSocket URLs with secrets in logs.
-- Run containers as non-root users with read-only application filesystems where
-  the runtime permits it.
-- Pin build dependencies and produce deterministic release builds.
-- Keep the gRPC coordination port private and Redis authenticated with TLS.
+1. Create a room and retain the room session token in the current tab.
+2. Select a map and wait for every slot to be present.
+3. Start the room, load the simulation worker, and create a peer connection for
+   every guest.
+4. Exchange signaling through short Vercel Function requests.
+5. Start the countdown after every data channel is ready.
+6. Apply local and remote input intents to the worker.
+7. Broadcast snapshots and completion over peer data channels.
+8. Stop the match if the host page exits or a required peer cannot reconnect.
+
+### Guest
+
+1. Join through the invite URL and retain its private room token in the tab.
+2. Observe map and roster changes through conditional lobby polling.
+3. Answer the host's WebRTC offer through signaling Functions.
+4. Send input intent to the host and render received snapshots.
+5. Attempt bounded ICE restart after a transient peer disconnection.
+6. Return to the lobby with a clear explanation if recovery fails.
+
+## Security and abuse controls
+
+- Room and signaling tokens never appear in URLs, fragments, Redis plaintext,
+  public state, analytics, or application logs.
+- Every private token is generated from cryptographically secure random bytes,
+  stored only as a digest server-side, and compared without early exit.
+- Per-IP and per-room Redis counters limit creates, joins, lookups, mutations,
+  signaling writes, and signaling polls.
+- API request bodies and peer messages have explicit byte limits and exact
+  schemas; unknown fields are rejected.
+- ICE candidates are visible only to authenticated participants in that room.
+- Security headers deny framing and MIME sniffing and set a restrictive
+  referrer policy and content security policy.
+- The host validates input axes, sequence ordering, and message frequency before
+  applying guest input.
+- Guests validate every host snapshot before rendering it.
+- Redis credentials exist only in Vercel environment variables.
+- Production does not expose native-server bypasses or debug panels containing
+  credentials.
+
+Host authority is a documented trust limitation, not an anti-cheat boundary.
 
 ## Failure behavior
 
-- Redis unavailable: lobby readiness is unhealthy; room mutations return the
-  existing service-unavailable response.
-- Simulation unavailable: starting rolls the room back to waiting, as it does
-  locally.
-- Browser loses lobby before start: SignalR reconnects and resubscribes with the
-  existing room token.
-- Browser loses gameplay after admission: it retries with the rotated resume
-  credential and bounded backoff.
-- Simulation restart or deployment: active matches end. The client displays a
-  clear match-ended message and returns users to the lobby.
-- API deployment: waiting-room connections reconnect. Because the alpha has one
-  API instance, presence is reconstructed from reconnecting clients.
+- Redis unavailable: Functions return a stable service-unavailable response;
+  existing peer matches continue because gameplay is browser-to-browser.
+- Signaling timeout: participants stay in the lobby and receive a direct-network
+  failure message.
+- Guest disconnect: the host neutralizes that player's input immediately and
+  attempts a bounded ICE restart.
+- Host disconnect, reload, sleep, or close: the match ends for all guests.
+- Wasm initialization failure: start returns the room to waiting and shows a
+  browser compatibility message.
+- Vercel usage limit reached: new lobby requests may fail; clients display a
+  temporary capacity message rather than looping.
+- Deployment during a match: loaded static assets and peer gameplay continue,
+  but signaling recovery may fail if protocol versions differ. A protocol
+  version is included in room and peer handshakes to fail clearly.
 
-Production deployment documentation must warn operators not to deploy the
-simulation during active playtests. Durable match recovery is a later phase.
+## Zero-cost guardrails
+
+- Deploy under a Vercel Hobby account for personal, non-commercial use.
+- Use Redis for Vercel's free plan and configure short TTLs for every key.
+- Use short Functions only; no WebSocket Function, simulation loop, cron loop,
+  proxy, or limit-circumvention mechanism is introduced.
+- Poll only while a lobby or negotiation screen is active, use ETags, and back
+  off hidden tabs.
+- Do not configure a paid TURN relay. The UI discloses reduced network
+  compatibility before room creation.
+- Enable Vercel usage notifications and inspect usage during the alpha.
 
 ## Verification
 
 Repository verification must include:
 
-- existing C++ simulation, backend, and client unit/integration suites;
-- tests for production URL validation and environment configuration;
-- protocol tests proving tickets are absent from WebSocket URLs;
-- authentication tests proving input-before-auth is rejected;
-- reconnection tests covering rotation, expiry, and invalid credentials;
-- tests proving the development bypass is disabled in production;
-- container image builds and non-root runtime checks;
-- local container smoke tests for all health endpoints;
-- a deployed two-browser room-to-match test on every map;
-- a deployed test from two separate networks to prove public connectivity;
-- inspection of platform logs to confirm admission credentials are absent.
+- all existing native C++, backend, and client suites;
+- TypeScript tests for every serverless room and signaling transition;
+- tests proving tokens remain out of URLs, public state, and logs;
+- rate-limit and malformed-payload tests;
+- native/Wasm deterministic parity fixtures for all four maps and rosters of
+  two, three, and four players;
+- worker timing, catch-up cap, and lifecycle tests;
+- peer protocol validation and disconnect tests;
+- browser tests with two to four isolated contexts covering lobby, host-only map
+  selection, negotiation, countdown, gameplay, checkpoint, and completion;
+- production-build checks proving the local bypass is absent;
+- Vercel preview smoke tests for SPA invite routes and every API endpoint;
+- a deployed test between two ordinary external networks;
+- confirmation that no credential appears in Vercel runtime logs.
 
-The public alpha is releasable only when all checks pass and both deployed health
-checks are green.
+The alpha is releasable only after the full verification set passes. A failed
+restrictive-network test is documented as the accepted no-TURN limitation, not
+silently treated as a working connection.
 
 ## User-owned account steps
 
-The user performs only actions that require account ownership, billing consent,
-or interactive browser authentication:
+The user performs only actions requiring account ownership or interactive
+authentication:
 
-1. Sign in to the existing Vercel CLI with `vercel login` and choose the Vercel
-   account or team that should own the game.
-2. Create or select a Fly.io account, install `flyctl` with Homebrew if needed,
-   and run `fly auth login`.
-3. Choose the Fly.io organization and approve any required billing setup.
-4. Provision one Upstash Redis database through the Vercel Marketplace or
-   Upstash console and retain its TLS endpoint/password for secret configuration.
-5. Approve the final generated Vercel and Fly.io application names and region.
+1. Run `vercel login` and choose the personal Hobby account that will own the
+   project.
+2. Confirm the project is personal and non-commercial under Hobby terms.
+3. Approve the Vercel project name when the prepared repository is linked.
+4. Install the free Redis for Vercel integration when prompted and connect it to
+   the project; no paid plan is selected.
+5. Approve the first production deployment after the preview verification
+   passes.
 
-No secret is committed to Git. The implementation instructions will set secrets
-through Vercel and Fly.io secret stores.
+No deployment secret is pasted into chat or committed to Git.
 
 ## Delivery sequence
 
-1. Implement and test production configuration boundaries.
-2. Replace URL-based WebSocket tickets and add bounded reconnection.
-3. Add production abuse controls and disable development bypasses.
-4. Add API and simulation Dockerfiles plus Fly.io manifests.
-5. Add Vercel SPA/build configuration.
-6. Run all local tests and container smoke tests.
-7. Perform the user-owned login and resource-creation steps.
-8. Deploy the simulation, lobby, and frontend in that order.
-9. Set final cross-service URLs and origins, then redeploy immutable builds.
-10. Run deployed multiplayer, map, security-log, and failure-path verification.
+1. Replace the previous server-hosted deployment assumptions with this design.
+2. Implement and parity-test the WebAssembly simulation target.
+3. Implement the Web Worker host runtime and peer protocol.
+4. Implement serverless lobby and signaling Functions backed by Redis.
+5. Replace production SignalR/gameplay WebSocket flow with WebRTC while
+   retaining native local development.
+6. Add security, rate limiting, zero-cost polling controls, and failure UI.
+7. Add Vercel build, routing, headers, and environment configuration.
+8. Run the complete native, Wasm, Function, client, and browser verification.
+9. Perform the user-owned Vercel login and free Redis installation.
+10. Deploy a preview, verify it, promote it, and run external-network playtests.
