@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using LinkedUp.Contracts;
@@ -54,8 +53,18 @@ public sealed class GameSession(HttpClient http)
         }
         if (!response.IsSuccessStatusCode)
         {
-            var problem = JsonSerializer.Deserialize<JsonElement>(body, Json);
-            throw new InvalidOperationException(problem.TryGetProperty("title", out var title) ? title.GetString() : "Room request failed.");
+            try
+            {
+                var problem = JsonSerializer.Deserialize<JsonElement>(body, Json);
+                if (problem.TryGetProperty("title", out var title))
+                    throw new InvalidOperationException(title.GetString() ?? "Room request failed.");
+            }
+            catch (JsonException) { }
+
+            throw new InvalidOperationException(
+                response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed
+                    ? "Room service endpoint was not found. Check the configured .NET backend URL."
+                    : $"Room request failed ({(int)response.StatusCode}).");
         }
         return JsonSerializer.Deserialize<T>(body, Json)
             ?? throw new InvalidOperationException("Room service returned an empty response.");

@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LinkedUp.Api\LinkedUp.Api.csproj" />
+    <ProjectReference Include="..\..\browser\LinkedUp.Client.csproj" />
   </ItemGroup>
 
 </Project>
