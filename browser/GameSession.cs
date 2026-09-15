@@ -47,6 +47,11 @@ public sealed class GameSession(HttpClient http)
     {
         if (response.StatusCode == HttpStatusCode.NoContent) return default!;
         var body = await response.Content.ReadAsStringAsync(cancellation);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            throw new InvalidOperationException(
+                $"Room service returned an empty response ({(int)response.StatusCode}) from {response.RequestMessage?.RequestUri}.");
+        }
         if (!response.IsSuccessStatusCode)
         {
             var problem = JsonSerializer.Deserialize<JsonElement>(body, Json);
