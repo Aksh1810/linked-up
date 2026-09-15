@@ -6,7 +6,7 @@
   "outputDirectory": ".vercel/output/static",
   "headers": [
     {
-      "source": "/_framework/(?:blazor\\.(?:boot\\.json|webassembly\\.js)|dotnet\\.js)",
+      "source": "/_framework/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     },
     {
