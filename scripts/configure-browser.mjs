@@ -17,7 +17,7 @@ await mkdir('.vercel/output', { recursive: true });
 const csp = `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ${api.origin} ${socket}; worker-src 'self' blob:; manifest-src 'self'`;
 await writeFile('.vercel/output/config.json', JSON.stringify({ version: 3, routes: [
   { src: '/(.*)', headers: { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }, continue: true },
-  { src: '/(?:index\\.html|appsettings\\.json|_framework/blazor\\.boot\\.json)', headers: { 'Cache-Control': 'no-cache' }, continue: true },
+  { src: '/(?:index\\.html|appsettings\\.json|_framework/(?:blazor\\.(?:boot\\.json|webassembly\\.js)|dotnet\\.js))', headers: { 'Cache-Control': 'no-cache' }, continue: true },
   { handle: 'filesystem' },
   { src: '/(?:_framework|assets)/(.*)', status: 404 },
   { src: '/.*', dest: '/index.html' }
