@@ -1,11 +1,16 @@
 **/*.test.ts
 **/test-results/**
 build*/**
+artifacts/
+.cache/
+.vercel/
 api/
 backend/LinkedUp.Api/
 backend/LinkedUp.Api.Tests/
 backend/LinkedUp.Simulation/
 backend/LinkedUp.Simulation.Tests/
+browser/bin/
+browser/obj/
 client/
 simulation/
 contracts/

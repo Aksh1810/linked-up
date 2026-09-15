@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+rm -rf artifacts/browser .vercel/output/static
 if ! command -v dotnet >/dev/null 2>&1; then
   migration_sdk="$PWD/.cache/dotnet"
   mkdir -p "$migration_sdk"
