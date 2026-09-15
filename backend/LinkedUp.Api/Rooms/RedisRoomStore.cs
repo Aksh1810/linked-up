@@ -297,9 +297,12 @@ public sealed class RedisRoomStore
     private static string GenerateToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
-    private static string HashToken(string rawToken) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken)))
-            .ToLowerInvariant();
+    private static string HashToken(string rawToken)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken) || rawToken.Length > 128)
+            throw new RoomException(RoomError.InvalidSession, "The room session is invalid.");
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken))).ToLowerInvariant();
+    }
 
     private static JsonSerializerOptions CreateJsonOptions()
     {

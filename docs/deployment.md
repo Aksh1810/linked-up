@@ -1,4 +1,14 @@
-# Vercel deployment runbook
+# .NET deployment runbook
+
+The active application is a standalone Blazor WebAssembly site on Vercel and an authoritative ASP.NET Core/BepuPhysics service on Render. The older Vercel-only runbook is retained below as historical reference.
+
+1. Create the free Render Blueprint from `render.yaml`. Supply `REDIS_URL` and `LinkedUp__ClientOrigin` (the final Vercel origin).
+2. Copy Render’s public HTTPS origin. Set `LINKEDUP_API_URL` to it in Vercel Preview and Production, then deploy.
+3. Verify `/health/ready`, create a two-player room, join from a second browser, start, and confirm both receive game snapshots.
+
+Render’s free service sleeps after 15 idle minutes. Its single backend instance owns live matches, so a restart returns players to the lobby.
+
+## Historical Vercel-only runbook
 
 Linked-Up deploys as one Vercel project. Vercel serves the static game and two short-lived Functions; a free Upstash Redis database stores rooms and WebRTC signaling messages. The host player's browser runs the authoritative Wasm simulation, so no permanent game server is required.
 

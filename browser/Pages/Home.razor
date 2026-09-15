@@ -1,0 +1,78 @@
+@page "/"
+@implements IAsyncDisposable
+@inject GameSession Game
+@inject IJSRuntime JS
+
+<main class="lobby" hidden="@(inMatch)">
+  <section class="card landing">
+    <p class="eyebrow">Co-op climb</p><h1>LINKED—UP</h1>
+    @if (Game.Room is null)
+    {
+      <label>Players <select @bind="capacity"><option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select></label>
+      <button @onclick="Create">Create room</button>
+      <label>Join with code <input maxlength="4" @bind="joinCode" /></label><button class="secondary" @onclick="Join">Join room</button>
+    }
+    else
+    {
+      <p class="eyebrow">Room @Game.Room.Code</p><h2>Your linked crew</h2>
+      <ul>@foreach (var player in Game.Room.Players) { <li><i class="robot @player.Color"></i>@player.Name @(player.IsHost ? "· Host" : "")</li> }</ul>
+      <label>Map <select disabled="@(!Game.Host)" value="@Game.Room.MapId" @onchange="SetMap"><option value="classic-ascent">Classic Ascent</option><option value="relay-ridge">Relay Ridge</option><option value="crane-shift">Crane Shift</option><option value="windworks">Windworks</option></select></label>
+      <p>@(Game.Host ? "Choose the route and start when the crew is full." : "Waiting for the host to start the climb.")</p>
+      @if (Game.Host) { <button disabled="@(Game.Room.Players.Count != Game.Room.Capacity)" @onclick="Start">Start game</button> }
+      <button class="secondary" @onclick="Leave">Leave room</button>
+      <button class="secondary" @onclick="CopyInvite">Copy invite link</button>
+    }
+    <p class="status" aria-live="polite">@status</p>
+  </section>
+</main>
+
+<main class="game" hidden="@(!inMatch)">
+  <canvas id="game-canvas" aria-label="Linked-Up game world"></canvas>
+  <header><p class="eyebrow">Linked—Up</p><strong>@route</strong></header>
+  <aside><p>@status</p><p>@tether</p><p>WASD move · Space jump / climb · drag to look</p><button class="secondary" @onclick="LeaveMatch">Leave match</button></aside>
+</main>
+
+@code {
+  private int capacity = 2;
+  private string joinCode = "";
+  private string status = "Create a room, then send the short code to your crew.";
+  private string route = "Base camp";
+  private string tether = "Tether slack";
+  private bool inMatch;
+  private IJSObjectReference? module;
+  private DotNetObjectReference<Home>? self;
+  private CancellationTokenSource? poller;
+
+  protected override async Task OnInitializedAsync()
+  {
+    var code = new Uri(NavigationManager.Uri).Query.TrimStart('?').Split('=', 2);
+    if (code.Length == 2 && code[0] == "room") { joinCode = Uri.UnescapeDataString(code[1]); await Join(); }
+  }
+  [Inject] private NavigationManager NavigationManager { get; set; } = default!;
+  private async Task Create() { try { await Game.CreateAsync(capacity, CancellationToken.None); status = "Invite your crew using this room code."; StartPolling(); } catch (Exception e) { status = e.Message; } }
+  private async Task Join() { try { await Game.JoinAsync(joinCode, CancellationToken.None); status = "Joined room."; StartPolling(); } catch (Exception e) { status = e.Message; } }
+  private async Task SetMap(ChangeEventArgs e) { try { await Game.SetMapAsync(e.Value?.ToString() ?? "", CancellationToken.None); } catch (Exception x) { status = x.Message; } }
+  private async Task Start() { try { await Game.StartAsync(CancellationToken.None); await Launch(); } catch (Exception e) { status = e.Message; } }
+  private async Task Launch()
+  {
+    try
+    {
+      var launch = await Game.LaunchAsync(CancellationToken.None);
+      module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./assets/game.js"); self ??= DotNetObjectReference.Create(this);
+      await module.InvokeVoidAsync("start", "game-canvas", launch.GameplayUrl, launch.MatchId, launch.Ticket, self);
+      inMatch = true; poller?.Cancel(); status = "Connecting to the climb…";
+    }
+    catch (Exception e) { status = e.Message; }
+  }
+  private async Task Leave() { await Game.LeaveAsync(CancellationToken.None); poller?.Cancel(); status = "Left room."; }
+  private async Task LeaveMatch() { if (module is not null) await module.InvokeVoidAsync("stop"); inMatch = false; await Leave(); }
+  private async Task CopyInvite() { await JS.InvokeVoidAsync("navigator.clipboard.writeText", $"{NavigationManager.BaseUri}?room={Game.Room?.Code}"); status = "Invite link copied."; }
+  private void StartPolling()
+  {
+    poller?.Cancel(); poller = new CancellationTokenSource(); var token = poller.Token;
+    _ = Task.Run(async () => { while (!token.IsCancellationRequested) { try { await Task.Delay(1500, token); await Game.RefreshAsync(token); if (Game.Room?.Status == "inGame") await InvokeAsync(Launch); await InvokeAsync(StateHasChanged); } catch (OperationCanceledException) { } catch { } } }, token);
+  }
+  [JSInvokable] public Task GameplayStatus(string value) { status = value; return InvokeAsync(StateHasChanged); }
+  [JSInvokable] public Task Snapshot(string zone, float tension) { route = zone; tether = tension > 1 ? $"Tether strain {tension:F1}" : "Tether slack"; return InvokeAsync(StateHasChanged); }
+  public async ValueTask DisposeAsync() { poller?.Cancel(); if (module is not null) await module.DisposeAsync(); self?.Dispose(); }
+}

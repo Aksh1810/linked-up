@@ -140,7 +140,7 @@ public sealed class RoomTests
 
         Assert.Equal(RoomStatus.InGame, room.Status);
         Assert.Equal(matchId, room.MatchId);
-        Assert.DoesNotContain("ticket", JsonSerializer.Serialize(PublicRoom.From(room)),
+        Assert.DoesNotContain("ticket", JsonSerializer.Serialize(PublicRooms.From(room)),
             StringComparison.OrdinalIgnoreCase);
     }
 
@@ -148,7 +148,7 @@ public sealed class RoomTests
     public void Public_room_always_includes_a_null_match_id_before_the_game()
     {
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(
-            PublicRoom.From(TestRoom()), new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            PublicRooms.From(TestRoom()), new JsonSerializerOptions(JsonSerializerDefaults.Web)));
 
         Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("matchId").ValueKind);
     }
@@ -159,7 +159,7 @@ public sealed class RoomTests
         var room = TestRoom();
         room.MatchId = Guid.NewGuid();
 
-        Assert.Null(PublicRoom.From(room).MatchId);
+        Assert.Null(PublicRooms.From(room).MatchId);
     }
 
     [Fact]
