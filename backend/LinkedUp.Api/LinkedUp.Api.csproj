@@ -9,19 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="StackExchange.Redis" Version="3.1.31" />
-    <PackageReference Include="Google.Protobuf" Version="3.29.5" />
-    <PackageReference Include="Grpc.Net.Client" Version="2.71.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.71.0" PrivateAssets="All" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Protobuf Include="..\..\contracts\proto\linked_up\match\v1\match_service.proto"
-              GrpcServices="Client"
-              ProtoRoot="..\..\contracts\proto" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="LinkedUp.Api.Tests" />
+    <ProjectReference Include="../LinkedUp.Contracts/LinkedUp.Contracts.csproj" />
+    <ProjectReference Include="../LinkedUp.Simulation/LinkedUp.Simulation.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,13 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:api": "node --test shared/*.test.ts api/**/*.test.ts",
-    "test": "npm run test:api && npm --prefix client test",
-    "build": "npm --prefix client run build"
+    "test": "dotnet test LinkedUp.slnx -m:1 /p:UseSharedCompilation=false",
+    "build": "bash scripts/build-blazor.sh"
   },
   "dependencies": {
-    "@vercel/node": "13.0.0",
-    "redis": "6.2.1"
+    "@vercel/node": "13.0.0"
   },
   "devDependencies": {
     "typescript": "6.0.3"

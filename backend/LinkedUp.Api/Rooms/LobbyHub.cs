@@ -21,7 +21,7 @@ public sealed class LobbyHub(
             {
                 var (room, player) = await rooms.ResolveSessionAsync(
                     roomCode, sessionToken, Context.ConnectionAborted);
-                return (room.Code, player.Id, PublicRoom.From(room));
+                return (room.Code, player.Id, PublicRooms.From(room));
             },
             canonicalCode => Groups.AddToGroupAsync(
                 Context.ConnectionId, canonicalCode, Context.ConnectionAborted),
@@ -38,7 +38,7 @@ public sealed class LobbyHub(
             if (removal is { IsLast: true, Result: not null })
             {
                 await Clients.Group(removal.Result.Code)
-                    .RoomUpdated(PublicRoom.From(removal.Result));
+                    .RoomUpdated(PublicRooms.From(removal.Result));
             }
         }
         catch (RoomException error) when (error.Error == RoomError.NotFound)

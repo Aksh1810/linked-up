@@ -11,7 +11,8 @@ public static class RoomEndpoints
     public static IEndpointRouteBuilder MapRoomEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var rooms = endpoints.MapGroup("/api/rooms")
-            .AddEndpointFilter<RoomProblemFilter>();
+            .AddEndpointFilter<RoomProblemFilter>()
+            .RequireRateLimiting("rooms");
 
         rooms.MapPost("", CreateAsync);
         rooms.MapGet("/{code}", GetAsync);
@@ -19,7 +20,18 @@ public static class RoomEndpoints
         rooms.MapPost("/{code}/leave", LeaveAsync);
         rooms.MapPost("/{code}/map", SetMapAsync);
         rooms.MapPost("/{code}/start", StartAsync);
+        rooms.MapPost("/{code}/launch", LaunchAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> LaunchAsync(string code, HttpRequest request,
+        RedisRoomStore store, ManagedMatches matches, CancellationToken token)
+    {
+        var (room, player) = await store.ResolveSessionAsync(code, RequireToken(request), token);
+        var launch = room.MatchId is { } id ? matches.Launch(id, player.Id) : null;
+        return launch is null
+            ? Results.Problem(statusCode: 410, title: "Match ended", detail: "This match has ended. Create a new room to play again.")
+            : Results.Ok(launch);
     }
 
     private static async Task<IResult> CreateAsync(
@@ -41,7 +53,7 @@ public static class RoomEndpoints
     {
         var room = await store.GetAsync(code, token)
             ?? throw new RoomException(RoomError.NotFound, "The room was not found.");
-        return TypedResults.Ok(PublicRoom.From(room));
+        return TypedResults.Ok(PublicRooms.From(room));
     }
 
     private static async Task<IResult> JoinAsync(
@@ -56,7 +68,7 @@ public static class RoomEndpoints
             "Player {PlayerId} joined room {RoomCode}; player count is {PlayerCount}",
             session.Player.Id, session.Room.Code, session.Room.Players.Count);
         await lobby.Clients.Group(session.Room.Code)
-            .RoomUpdated(PublicRoom.From(session.Room));
+            .RoomUpdated(PublicRooms.From(session.Room));
         return TypedResults.Ok(ToResponse(session));
     }
 
@@ -85,7 +97,7 @@ public static class RoomEndpoints
         if (remaining is not null)
         {
             await lobby.Clients.Group(remaining.Code)
-                .RoomUpdated(PublicRoom.From(remaining));
+                .RoomUpdated(PublicRooms.From(remaining));
         }
 
         return TypedResults.NoContent();
@@ -118,9 +130,9 @@ public static class RoomEndpoints
         {
             created = await simulation.CreateMatchAsync(starting, token);
         }
-        catch (SimulationUnavailableException)
+        catch (Exception error) when (error is SimulationUnavailableException or OperationCanceledException)
         {
-            await RollbackAndBroadcastAsync(starting, store, lobby, token);
+            await RollbackAndBroadcastAsync(starting, store, lobby, CancellationToken.None);
             throw;
         }
 
@@ -149,7 +161,7 @@ public static class RoomEndpoints
             throw new RoomException(RoomError.MatchStartCancelled, "The room start changed.");
         }
 
-        var publicRoom = PublicRoom.From(inGame);
+        var publicRoom = PublicRooms.From(inGame);
         await lobby.Clients.Group(inGame.Code).RoomUpdated(publicRoom);
         foreach (var launch in created.Launches)
         {
@@ -174,7 +186,7 @@ public static class RoomEndpoints
             code, RequireToken(httpRequest), request.MapId, token);
         loggerFactory.CreateLogger("LinkedUp.RoomLifecycle").LogInformation(
             "Map {MapId} selected for room {RoomCode}", room.MapId, room.Code);
-        var publicRoom = PublicRoom.From(room);
+        var publicRoom = PublicRooms.From(room);
         await lobby.Clients.Group(room.Code).RoomUpdated(publicRoom);
         return TypedResults.Ok(publicRoom);
     }
@@ -188,7 +200,7 @@ public static class RoomEndpoints
         var waiting = await store.RollbackStartAsync(starting, token);
         if (waiting is not null)
         {
-            await lobby.Clients.Group(waiting.Code).RoomUpdated(PublicRoom.From(waiting));
+            await lobby.Clients.Group(waiting.Code).RoomUpdated(PublicRooms.From(waiting));
         }
     }
 
@@ -229,7 +241,7 @@ public static class RoomEndpoints
     }
 
     private static RoomSessionResponse ToResponse(RoomSession session) => new(
-        PublicRoom.From(session.Room),
+        PublicRooms.From(session.Room),
         new PlayerSession(session.Player.Id, session.Token));
 
     private static string RequireToken(HttpRequest request)

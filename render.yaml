@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: linked-up-dotnet
+    runtime: docker
+    plan: free
+    dockerfilePath: ./infrastructure/Dockerfile
+    healthCheckPath: /health/ready
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: REDIS_URL
+        sync: false
+      - key: LinkedUp__ClientOrigin
+        sync: false
+      - key: Match__MaxMatches
+        value: "8"

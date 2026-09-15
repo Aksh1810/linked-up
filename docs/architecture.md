@@ -1,6 +1,6 @@
 # Architecture
 
-Linked-Up has separate control-plane and gameplay paths.
+Linked-Up has separate control-plane and gameplay paths. The active deployment uses a C# Blazor WebAssembly browser client, Babylon.js only for rendering, and an ASP.NET Core backend that runs the managed BepuPhysics simulation.
 
 | Component | Responsibility |
 | --- | --- |

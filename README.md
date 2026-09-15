@@ -2,6 +2,8 @@
 
 Linked-Up is a 2–4 player cooperative browser climbing game. Small robots share an energy tether, so a jump, fall, or rescue affects the whole team. The host chooses one of four maps in the lobby: Classic Ascent, Relay Ridge, Crane Shift, or Windworks.
 
+The active implementation is .NET 10: a managed BepuPhysics backend owns matches, and a Blazor WebAssembly browser client runs on Vercel with Babylon.js as a rendering bridge. See [deployment](docs/deployment.md).
+
 ## Public-alpha architecture
 
 The deployable version runs as one Vercel project:

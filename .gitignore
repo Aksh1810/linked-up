@@ -20,3 +20,8 @@ docs/
 .worktrees/
 .vercel
 .env*.local
+/browser/bin/
+/browser/obj/
+/browser/node_modules/
+/browser/wwwroot/assets/
+/artifacts/

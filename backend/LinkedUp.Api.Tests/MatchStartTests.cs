@@ -2,10 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Channels;
-using Grpc.Core;
 using LinkedUp.Api.Matches;
 using LinkedUp.Api.Rooms;
-using LinkedUp.Contracts.Match.V1;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +12,6 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
 namespace LinkedUp.Api.Tests;
@@ -243,105 +240,6 @@ public sealed class MatchStartTests : IAsyncLifetime
         var room = await WaitForInGameAsync(host.Room.Code);
         Assert.NotNull(room.MatchId);
         Assert.Equal(0, _simulation.DestroyCalls);
-    }
-
-    [Fact]
-    public async Task Create_match_returns_validated_launches_in_room_order()
-    {
-        var room = FullRoom();
-        var client = Client(response => Task.FromResult(response));
-
-        var created = await client.CreateMatchAsync(room, CancellationToken.None);
-
-        Assert.Equal(Guid.Parse("11111111-1111-4111-8111-111111111111"), created.MatchId);
-        Assert.Equal(room.Players.Select(player => player.Id), created.Launches.Select(launch => launch.PlayerId));
-    }
-
-    [Fact]
-    public async Task Create_match_sends_the_selected_room_map()
-    {
-        var room = FullRoom();
-        room.SetMap(new string('a', 64), RoomMaps.Windworks);
-        CreateMatchRequest? sent = null;
-        var client = new SimulationMatchClient(
-            (request, _) =>
-            {
-                sent = request;
-                return Task.FromResult(ValidResponse(request));
-            },
-            (_, _) => Task.CompletedTask,
-            TimeProvider.System,
-            NullLogger<SimulationMatchClient>.Instance);
-
-        await client.CreateMatchAsync(room, CancellationToken.None);
-
-        Assert.Equal(RoomMaps.Windworks, sent!.MapId);
-    }
-
-    [Theory]
-    [InlineData("expired")]
-    [InlineData("wrong-player")]
-    [InlineData("duplicate")]
-    [InlineData("http-url")]
-    public async Task Create_match_rejects_malformed_replies(string defect)
-    {
-        var room = FullRoom();
-        var client = Client(response => Task.FromResult(Defective(response, defect)));
-
-        await Assert.ThrowsAsync<SimulationUnavailableException>(() =>
-            client.CreateMatchAsync(room, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Create_match_converts_unavailable_rpc_to_simulation_unavailable()
-    {
-        var client = Client(_ => throw new RpcException(new Status(StatusCode.Unavailable, "offline")));
-
-        await Assert.ThrowsAsync<SimulationUnavailableException>(() =>
-            client.CreateMatchAsync(FullRoom(), CancellationToken.None));
-    }
-
-    private static SimulationMatchClient Client(Func<CreateMatchResponse, Task<CreateMatchResponse>> reply) =>
-        new(async (request, _) => await reply(ValidResponse(request)),
-            (_, _) => Task.CompletedTask, TimeProvider.System, NullLogger<SimulationMatchClient>.Instance);
-
-    private static Room FullRoom()
-    {
-        var room = Room.Create("XK72", 2, Guid.Parse("00000000-0000-0000-0000-000000000001"),
-            new string('a', 64), DateTimeOffset.UnixEpoch);
-        room.Join(Guid.Parse("00000000-0000-0000-0000-000000000002"), new string('b', 64), DateTimeOffset.UnixEpoch);
-        return room;
-    }
-
-    private static CreateMatchResponse ValidResponse(CreateMatchRequest request)
-    {
-        var response = new CreateMatchResponse
-        {
-            MatchId = "11111111-1111-4111-8111-111111111111",
-            GameplayUrl = "ws://127.0.0.1:8420/gameplay",
-            CountdownSeconds = 3,
-            ExpiresUnixMs = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds()
-        };
-        response.Launches.Add(request.Players.Select(player => new PlayerLaunch
-        {
-            PlayerId = player.Id,
-            Color = player.Color,
-            Ticket = "ticket-" + player.Id,
-            ExpiresUnixMs = response.ExpiresUnixMs
-        }));
-        return response;
-    }
-
-    private static CreateMatchResponse Defective(CreateMatchResponse response, string defect)
-    {
-        switch (defect)
-        {
-            case "expired": response.ExpiresUnixMs = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds(); break;
-            case "wrong-player": response.Launches[0].PlayerId = Guid.NewGuid().ToString(); break;
-            case "duplicate": response.Launches[1].PlayerId = response.Launches[0].PlayerId; break;
-            case "http-url": response.GameplayUrl = "http://127.0.0.1:8420/gameplay"; break;
-        }
-        return response;
     }
 
     private async Task<RoomSessionResponse> CreateRoomAsync(int capacity)

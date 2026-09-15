@@ -2,5 +2,9 @@
   <Folder Name="/backend/">
     <Project Path="backend/LinkedUp.Api.Tests/LinkedUp.Api.Tests.csproj" />
     <Project Path="backend/LinkedUp.Api/LinkedUp.Api.csproj" />
+    <Project Path="backend/LinkedUp.Contracts/LinkedUp.Contracts.csproj" />
+    <Project Path="backend/LinkedUp.Simulation/LinkedUp.Simulation.csproj" />
+    <Project Path="backend/LinkedUp.Simulation.Tests/LinkedUp.Simulation.Tests.csproj" />
+    <Project Path="browser/LinkedUp.Client.csproj" />
   </Folder>
 </Solution>
