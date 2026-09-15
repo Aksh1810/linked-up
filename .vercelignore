@@ -2,7 +2,9 @@
 **/test-results/**
 build*/**
 api/
-backend/
+backend/*
+!backend/LinkedUp.Contracts/
+!backend/LinkedUp.Contracts/**
 client/
 simulation/
 contracts/
