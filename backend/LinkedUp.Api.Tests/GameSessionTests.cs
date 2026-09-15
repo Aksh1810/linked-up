@@ -14,13 +14,13 @@ public sealed class GameSessionTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             game.CreateAsync(2, CancellationToken.None));
 
-        Assert.Equal("Room service endpoint was not found. Check the configured .NET backend URL.", error.Message);
+        Assert.Equal("Room service returned a non-JSON response (200). Check the configured .NET backend URL.", error.Message);
     }
 
     private sealed class StubHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.MethodNotAllowed)
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("<!doctype html><title>Not Found</title>"),
                 RequestMessage = request

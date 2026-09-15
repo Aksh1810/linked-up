@@ -12,7 +12,8 @@ if ! command -v dotnet >/dev/null 2>&1; then
 fi
 npm --prefix browser ci
 npm --prefix browser run build
+node scripts/configure-browser.mjs browser/wwwroot/appsettings.json
 dotnet publish browser/LinkedUp.Client.csproj -c Release -o artifacts/browser /p:UseAppHost=false
-node scripts/configure-browser.mjs
+grep -q '"../appsettings.json"' artifacts/browser/wwwroot/_framework/dotnet.js
 mkdir -p .vercel/output/static
 cp -R artifacts/browser/wwwroot/. .vercel/output/static/

@@ -51,23 +51,24 @@ public sealed class GameSession(HttpClient http)
             throw new InvalidOperationException(
                 $"Room service returned an empty response ({(int)response.StatusCode}) from {response.RequestMessage?.RequestUri}.");
         }
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            try
+            if (!response.IsSuccessStatusCode)
             {
                 var problem = JsonSerializer.Deserialize<JsonElement>(body, Json);
-                if (problem.TryGetProperty("title", out var title))
-                    throw new InvalidOperationException(title.GetString() ?? "Room request failed.");
+                throw new InvalidOperationException(problem.TryGetProperty("title", out var title)
+                    ? title.GetString() ?? "Room request failed."
+                    : "Room request failed.");
             }
-            catch (JsonException) { }
 
-            throw new InvalidOperationException(
-                response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed
-                    ? "Room service endpoint was not found. Check the configured .NET backend URL."
-                    : $"Room request failed ({(int)response.StatusCode}).");
+            return JsonSerializer.Deserialize<T>(body, Json)
+                ?? throw new InvalidOperationException("Room service returned an empty response.");
         }
-        return JsonSerializer.Deserialize<T>(body, Json)
-            ?? throw new InvalidOperationException("Room service returned an empty response.");
+        catch (JsonException)
+        {
+            throw new InvalidOperationException(
+                $"Room service returned a non-JSON response ({(int)response.StatusCode}). Check the configured .NET backend URL.");
+        }
     }
     private static string Code(string code)
     {
