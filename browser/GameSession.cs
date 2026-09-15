@@ -46,12 +46,14 @@ public sealed class GameSession(HttpClient http)
     private static async Task<T> Read<T>(HttpResponseMessage response, CancellationToken cancellation)
     {
         if (response.StatusCode == HttpStatusCode.NoContent) return default!;
+        var body = await response.Content.ReadAsStringAsync(cancellation);
         if (!response.IsSuccessStatusCode)
         {
-            var problem = await response.Content.ReadFromJsonAsync<JsonElement>(Json, cancellation);
+            var problem = JsonSerializer.Deserialize<JsonElement>(body, Json);
             throw new InvalidOperationException(problem.TryGetProperty("title", out var title) ? title.GetString() : "Room request failed.");
         }
-        return (await response.Content.ReadFromJsonAsync<T>(Json, cancellation))!;
+        return JsonSerializer.Deserialize<T>(body, Json)
+            ?? throw new InvalidOperationException("Room service returned an empty response.");
     }
     private static string Code(string code)
     {
