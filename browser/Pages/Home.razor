@@ -9,8 +9,8 @@
     @if (Game.Room is null)
     {
       <label>Players <select @bind="capacity"><option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select></label>
-      <button @onclick="Create">Create room</button>
-      <label>Join with code <input maxlength="4" @bind="joinCode" /></label><button class="secondary" @onclick="Join">Join room</button>
+      <button disabled="@busy" @onclick="Create">Create room</button>
+      <label>Join with code <input maxlength="4" @bind="joinCode" /></label><button class="secondary" disabled="@busy" @onclick="Join">Join room</button>
     }
     else
     {
@@ -18,7 +18,7 @@
       <ul>@foreach (var player in Game.Room.Players) { <li><i class="robot @player.Color"></i>@player.Name @(player.IsHost ? "· Host" : "")</li> }</ul>
       <label>Map <select disabled="@(!Game.Host)" value="@Game.Room.MapId" @onchange="SetMap"><option value="classic-ascent">Classic Ascent</option><option value="relay-ridge">Relay Ridge</option><option value="crane-shift">Crane Shift</option><option value="windworks">Windworks</option></select></label>
       <p>@(Game.Host ? "Choose the route and start when the crew is full." : "Waiting for the host to start the climb.")</p>
-      @if (Game.Host) { <button disabled="@(Game.Room.Players.Count != Game.Room.Capacity)" @onclick="Start">Start game</button> }
+      @if (Game.Host) { <button disabled="@(busy || launching || Game.Room.Status != "waiting" || Game.Room.Players.Count != Game.Room.Capacity)" @onclick="Start">Start game</button> }
       <button class="secondary" @onclick="Leave">Leave room</button>
       <button class="secondary" @onclick="CopyInvite">Copy invite link</button>
     }
@@ -27,9 +27,20 @@
 </main>
 
 <main class="game" hidden="@(!inMatch)">
-  <canvas id="game-canvas" aria-label="Linked-Up game world"></canvas>
+  <canvas id="game-canvas" aria-label="Linked-Up game world" tabindex="0"></canvas>
   <header><p class="eyebrow">Linked—Up</p><strong>@route</strong></header>
-  <aside><p>@status</p><p>@tether</p><p>WASD move · Space jump / climb · drag to look</p><button class="secondary" @onclick="LeaveMatch">Leave match</button></aside>
+  <aside><p aria-live="polite">@status</p><p>@tether</p><p>@telemetry</p><p>WASD move · Space jump / climb · drag to look</p><button class="secondary" disabled="@(gameplay is null)" @onclick="OpenSettings">Settings</button><button class="secondary" @onclick="LeaveMatch">Leave match</button></aside>
+  <dialog id="settings-panel" aria-labelledby="settings-title" @onclose="CloseSettings" @oncancel="CloseSettings">
+    <h2 id="settings-title">Game settings</h2>
+    <label>Camera sensitivity <select @bind="preferences.CameraSensitivity" @bind:after="SaveSettings"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+    <label class="checkbox"><input type="checkbox" @bind="preferences.InvertY" @bind:after="SaveSettings" /> Invert camera Y</label>
+    <label class="checkbox"><input type="checkbox" @bind="preferences.ReducedMotion" @bind:after="SaveSettings" /> Reduce motion</label>
+    <button class="secondary" @onclick="ResetCamera">Reset camera</button><button class="secondary" @onclick="Fullscreen">Toggle fullscreen</button><button @onclick="CloseSettings">Close settings</button>
+  </dialog>
+  @if (hud?.Finished == true)
+  {
+    <section class="card completion" role="status"><h2>Summit reached</h2><p>Your crew finished in @hud.Elapsed.</p><button @onclick="LeaveMatch">Return to lobby</button></section>
+  }
 </main>
 
 @code {
@@ -38,41 +49,125 @@
   private string status = "Create a room, then send the short code to your crew.";
   private string route = "Base camp";
   private string tether = "Tether slack";
+  private GameplayHud? hud;
+  private string telemetry = "";
+  private ClientSettings preferences = new();
+  private bool settingsOpen;
+  private long previousReset;
   private bool inMatch;
+  private bool busy;
+  private bool launching;
+  private MatchLaunch? pendingLaunch;
+  private GameplayClient? gameplay;
+  private CancellationTokenSource? matchLifetime;
   private IJSObjectReference? module;
   private DotNetObjectReference<Home>? self;
   private CancellationTokenSource? poller;
 
   protected override async Task OnInitializedAsync()
   {
+    Game.RoomChanged += OnRoomChanged;
     var code = new Uri(NavigationManager.Uri).Query.TrimStart('?').Split('=', 2);
     if (code.Length == 2 && code[0] == "room") { joinCode = Uri.UnescapeDataString(code[1]); await Join(); }
   }
   [Inject] private NavigationManager NavigationManager { get; set; } = default!;
-  private async Task Create() { try { await Game.CreateAsync(capacity, CancellationToken.None); status = "Invite your crew using this room code."; StartPolling(); } catch (Exception e) { status = e.Message; } }
-  private async Task Join() { try { await Game.JoinAsync(joinCode, CancellationToken.None); status = "Joined room."; StartPolling(); } catch (Exception e) { status = e.Message; } }
+  private async Task Create() { if (busy) return; busy = true; try { await Game.CreateAsync(capacity, CancellationToken.None); status = "Invite your crew using this room code."; StartPolling(); } catch (Exception e) { status = e.Message; } finally { busy = false; } }
+  private async Task Join() { if (busy) return; busy = true; try { await Game.JoinAsync(joinCode, CancellationToken.None); status = "Joined room."; StartPolling(); } catch (Exception e) { status = e.Message; } finally { busy = false; } }
   private async Task SetMap(ChangeEventArgs e) { try { await Game.SetMapAsync(e.Value?.ToString() ?? "", CancellationToken.None); } catch (Exception x) { status = x.Message; } }
-  private async Task Start() { try { await Game.StartAsync(CancellationToken.None); await Launch(); } catch (Exception e) { status = e.Message; } }
+  private async Task Start() { if (busy || launching || inMatch) return; busy = true; try { await Game.StartAsync(CancellationToken.None); await Launch(); } catch (Exception e) { status = e.Message; } finally { busy = false; } }
   private async Task Launch()
   {
+    if (inMatch || launching) return;
+    launching = true;
+    matchLifetime = new CancellationTokenSource();
+    var token = matchLifetime.Token;
     try
     {
-      var launch = await Game.LaunchAsync(CancellationToken.None);
+      var launch = await Game.LaunchAsync(token);
       module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./assets/game.js"); self ??= DotNetObjectReference.Create(this);
-      await module.InvokeVoidAsync("start", "game-canvas", launch.GameplayUrl, launch.MatchId, launch.Ticket, self);
+      token.ThrowIfCancellationRequested();
+      pendingLaunch = launch;
+      hud = null; route = "Base camp"; tether = "Linked tether";
       inMatch = true; poller?.Cancel(); status = "Connecting to the climb…";
     }
-    catch (Exception e) { status = e.Message; }
+    catch (OperationCanceledException) when (token.IsCancellationRequested) { launching = false; }
+    catch (Exception e) { launching = false; status = e.Message; }
   }
-  private async Task Leave() { await Game.LeaveAsync(CancellationToken.None); poller?.Cancel(); status = "Left room."; }
-  private async Task LeaveMatch() { if (module is not null) await module.InvokeVoidAsync("stop"); inMatch = false; await Leave(); }
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (pendingLaunch is not { } launch) return;
+    pendingLaunch = null;
+    var token = matchLifetime!.Token;
+    try
+    {
+      var connected = await GameplayClient.ConnectAsync(launch, token);
+      if (token.IsCancellationRequested) { await connected.DisposeAsync(); return; }
+      gameplay = connected;
+      var renderer = module!;
+      preferences = ClientSettings.Read(await renderer.InvokeAsync<string?>("loadPreferences"));
+      preferences.ReducedMotion |= await renderer.InvokeAsync<bool>("prefersReducedMotion");
+      token.ThrowIfCancellationRequested();
+      gameplay.StatusChanged += OnGameplayStatus;
+      gameplay.SnapshotChanged += OnSnapshot;
+      status = gameplay.Status;
+      previousReset = 0;
+      await renderer.InvokeVoidAsync("start", "game-canvas", launch.Color, self, preferences.Camera);
+    }
+    catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    catch (Exception e) { status = e.Message; }
+    finally { launching = false; StateHasChanged(); }
+  }
+  private async Task Leave() { poller?.Cancel(); try { await Game.LeaveAsync(CancellationToken.None); status = "Left room."; } catch (Exception e) { status = e.Message; } }
+  private async Task StopGameplay()
+  {
+    pendingLaunch = null;
+    if (settingsOpen) await CloseSettings();
+    matchLifetime?.Cancel();
+    if (module is not null) await module.InvokeVoidAsync("stop");
+    if (gameplay is not null)
+    {
+      gameplay.StatusChanged -= OnGameplayStatus;
+      gameplay.SnapshotChanged -= OnSnapshot;
+      await gameplay.DisposeAsync(); gameplay = null;
+    }
+    matchLifetime?.Dispose(); matchLifetime = null; launching = false;
+  }
+  private async Task LeaveMatch() { await StopGameplay(); inMatch = false; await Leave(); }
+  private void OnRoomChanged() => _ = InvokeAsync(async () =>
+  {
+    if (Game.Room is null)
+    {
+      poller?.Cancel();
+      status = "Lobby connection closed. Join the room again to reconnect.";
+    }
+    else if (Game.Room.Status == "inGame") await Launch();
+    StateHasChanged();
+  });
   private async Task CopyInvite() { await JS.InvokeVoidAsync("navigator.clipboard.writeText", $"{NavigationManager.BaseUri}?room={Game.Room?.Code}"); status = "Invite link copied."; }
+  private async Task OpenSettings() { settingsOpen = true; gameplay?.Input.Clear(); await module!.InvokeVoidAsync("settingsPanel", true); }
+  private async Task CloseSettings() { if (!settingsOpen) return; settingsOpen = false; await module!.InvokeVoidAsync("settingsPanel", false); }
+  private async Task SaveSettings() { var renderer = module!; await renderer.InvokeVoidAsync("savePreferences", System.Text.Json.JsonSerializer.Serialize(preferences, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))); await renderer.InvokeVoidAsync("configure", preferences.Camera); }
+  private async Task ResetCamera() => await module!.InvokeVoidAsync("resetCamera");
+  private async Task Fullscreen() { try { await module!.InvokeVoidAsync("fullscreen"); } catch (JSException) { status = "Fullscreen is unavailable."; } }
   private void StartPolling()
   {
     poller?.Cancel(); poller = new CancellationTokenSource(); var token = poller.Token;
-    _ = Task.Run(async () => { while (!token.IsCancellationRequested) { try { await Task.Delay(1500, token); await Game.RefreshAsync(token); if (Game.Room?.Status == "inGame") await InvokeAsync(Launch); await InvokeAsync(StateHasChanged); } catch (OperationCanceledException) { } catch { } } }, token);
+    _ = Task.Run(async () => { while (!token.IsCancellationRequested) { try { await Task.Delay(1500, token); await Game.RefreshAsync(token); if (Game.Room?.Status == "inGame") await InvokeAsync(() => Launch()); await InvokeAsync(StateHasChanged); } catch (OperationCanceledException) { } catch { } } }, token);
   }
   [JSInvokable] public Task GameplayStatus(string value) { status = value; return InvokeAsync(StateHasChanged); }
-  [JSInvokable] public Task Snapshot(string zone, float tension) { route = zone; tether = tension > 1 ? $"Tether strain {tension:F1}" : "Tether slack"; return InvokeAsync(StateHasChanged); }
-  public async ValueTask DisposeAsync() { poller?.Cancel(); if (module is not null) await module.DisposeAsync(); self?.Dispose(); }
+  [JSInvokable] public void KeyChanged(string code, bool pressed) { if (!settingsOpen) gameplay?.Input.Key(code, pressed); }
+  [JSInvokable] public void ClearInput() => gameplay?.Input.Clear();
+  [JSInvokable] public Task<ServerSnapshot?> Frame(double now, double cameraAlpha) => gameplay?.FrameAsync(now, cameraAlpha) ?? Task.FromResult<ServerSnapshot?>(null);
+  private void OnGameplayStatus(string value) { status = value; _ = InvokeAsync(StateHasChanged); }
+  private void OnSnapshot(ServerSnapshot snapshot)
+  {
+    var localId = gameplay?.Welcome?.Player;
+    var local = snapshot.Players.FirstOrDefault(player => player.Id == localId);
+    var next = GameplayHud.From(snapshot, gameplay?.Welcome?.MapId ?? "classic-ascent", localId, previousReset);
+    previousReset = snapshot.ResetCount;
+    if (local is not null) telemetry = $"{char.ToUpperInvariant(local.Id[0])}{local.Id[1..]} robot · {Math.Sqrt(local.Velocity.X * local.Velocity.X + local.Velocity.Z * local.Velocity.Z):F1} m/s · Tick {snapshot.Tick}";
+    hud = next; route = hud.Route; tether = hud.Tether; status = hud.Status;
+    _ = InvokeAsync(StateHasChanged);
+  }
+  public async ValueTask DisposeAsync() { Game.RoomChanged -= OnRoomChanged; poller?.Cancel(); await StopGameplay(); if (module is not null) await module.DisposeAsync(); self?.Dispose(); }
 }

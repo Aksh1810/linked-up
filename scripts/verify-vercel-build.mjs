@@ -1,12 +1,9 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
-import { dirname, extname, join, relative } from "node:path";
+import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const securityNames = [
-  "content-security-policy", "permissions-policy", "referrer-policy",
-  "x-content-type-options", "x-frame-options",
-];
+const securityNames = ["content-security-policy", "permissions-policy", "referrer-policy", "x-content-type-options", "x-frame-options"];
 const forbidden = ["ws://127.0.0.1:9002", "player=blue", "player=orange"];
 
 async function exists(path) {
@@ -33,45 +30,20 @@ export async function verifyProjectFiles(root) {
   try { config = JSON.parse(await readFile(join(root, "vercel.json"), "utf8")); }
   catch { return result(["vercel.json is missing or invalid."]); }
   if (config.buildCommand !== "npm run build") errors.push("Vercel must run the root build.");
-  if (config.outputDirectory !== "client/dist") errors.push("Vercel output must be client/dist.");
-  if (typeof config.installCommand !== "string" || !config.installCommand.includes("client")) {
-    errors.push("Client dependencies must be installed.");
-  }
-  if (!config.functions || !Object.keys(config.functions).some((key) => key.startsWith("api/"))) {
-    errors.push("API Functions are not configured.");
-  }
-  const rewrite = Array.isArray(config.rewrites) ? config.rewrites.find((item) => item.destination === "/index.html") : undefined;
-  if (!rewrite || typeof rewrite.source !== "string" || !rewrite.source.includes("?!api") || !rewrite.source.includes("assets")) {
-    errors.push("The SPA rewrite must exclude API and static assets.");
-  }
-  const roomActionRewrite = Array.isArray(config.rewrites)
-    ? config.rewrites.find((item) => item.source === "/api/rooms/:roomId/:action")
-    : undefined;
-  if (roomActionRewrite?.destination !== "/api/room?__roomId=:roomId&__roomAction=:action") {
-    errors.push("Nested room actions must route through the room Function.");
-  }
-  const roomRewrite = Array.isArray(config.rewrites)
-    ? config.rewrites.find((item) => item.source === "/api/rooms/:roomId")
-    : undefined;
-  if (roomRewrite?.destination !== "/api/room?__roomId=:roomId") {
-    errors.push("Room reads must route through the room Function.");
-  }
+  if (config.outputDirectory !== ".vercel/output/static") errors.push("Vercel output must be .vercel/output/static.");
+  if (config.installCommand !== "npm ci") errors.push("Vercel must install the root dependencies.");
   const headers = Array.isArray(config.headers) ? config.headers : [];
-  const assetCache = headers.find((item) => item.source === "/assets/(.*)");
-  if (!assetCache || !JSON.stringify(assetCache).includes("immutable")) errors.push("Assets need immutable caching.");
-  const names = new Set(headers.flatMap((entry) => Array.isArray(entry.headers)
-    ? entry.headers.map((header) => String(header.key).toLowerCase()) : []));
+  const names = new Set(headers.flatMap(entry => Array.isArray(entry.headers)
+    ? entry.headers.map(header => String(header.key).toLowerCase()) : []));
   for (const name of securityNames) if (!names.has(name)) errors.push(`Missing ${name} header.`);
-  const csp = JSON.stringify(headers);
-  if (!csp.includes("wasm-unsafe-eval") || !csp.includes("worker-src")) errors.push("CSP must allow the Wasm worker.");
-
+  const assetCache = headers.find(item => item.source === "/assets/(.*)");
+  if (!assetCache || !JSON.stringify(assetCache).includes("no-cache")) errors.push("The stable game.js URL must revalidate after deployment.");
+  if (!JSON.stringify(headers).includes("/_framework/(.*)")) errors.push("Framework assets need an explicit cache policy.");
   let environment = "";
   try { environment = await readFile(join(root, ".env.example"), "utf8"); }
   catch { errors.push(".env.example is missing."); }
-  const assignments = environment.split(/\r?\n/).filter((line) => line && !line.startsWith("#"));
-  if (assignments.length !== 1 || assignments[0] !== "REDIS_URL=") {
-    errors.push(".env.example must name REDIS_URL without a credential value.");
-  }
+  const assignments = environment.split(/\r?\n/).filter(line => line && !line.startsWith("#"));
+  if (assignments.length !== 1 || assignments[0] !== "LINKEDUP_API_URL=") errors.push(".env.example must name LINKEDUP_API_URL without a credential value.");
   return result(errors);
 }
 
@@ -79,59 +51,33 @@ export async function verifyVercelOutput(root) {
   const errors = [];
   const staticRoot = join(root, "static");
   const staticFiles = await filesBelow(staticRoot);
+  const relativeFiles = staticFiles.map(path => relative(staticRoot, path));
   if (!await exists(join(staticRoot, "index.html"))) errors.push("Static SPA index is missing.");
-  const wasm = staticFiles.filter((path) => extname(path) === ".wasm");
-  if (wasm.length === 0) errors.push("Wasm simulation asset is missing.");
-  else {
-    const magic = await readFile(wasm[0]);
-    if (magic.length < 4 || magic.subarray(0, 4).toString("hex") !== "0061736d") {
-      errors.push("Wasm asset is invalid.");
-    }
-  }
-  const functionFiles = await filesBelow(join(root, "functions"));
-  const functions = functionFiles
-    .filter((path) => path.endsWith(".vc-config.json"))
-    .map((path) => relative(join(root, "functions"), dirname(path)))
-    .sort();
-  const expectedFunctions = [join("api", "room.func"), join("api", "rooms", "index.func")].sort();
-  if (JSON.stringify(functions) !== JSON.stringify(expectedFunctions)) {
-    errors.push(`Expected only the room API Functions; found ${functions.join(", ") || "none"}.`);
-  }
-  for (const path of functionFiles.filter((item) => extname(item) === ".js")) {
-    const source = await readFile(path, "utf8");
-    if (/(?:\bfrom\s+|\bimport\s*)["'][^"']+\.ts["']/.test(source)) {
-      errors.push(`Built Function retained a TypeScript import in ${relative(join(root, "functions"), path)}.`);
-    }
-  }
+  if (!relativeFiles.some(path => path === "assets/game.js")) errors.push("Babylon rendering bridge is missing.");
+  if (!relativeFiles.some(path => path.startsWith("_framework/") && path.endsWith(".js"))) errors.push("Blazor framework assets are missing.");
+  let settings;
+  try { settings = JSON.parse(await readFile(join(staticRoot, "appsettings.json"), "utf8")); }
+  catch { errors.push("Published appsettings.json is missing or invalid."); }
+  if (settings && (!/^https:\/\/[^/]+\/$/.test(settings.ApiBaseUrl ?? ""))) errors.push("Published ApiBaseUrl must be a public HTTPS origin.");
   let configText = "";
   try { configText = (await readFile(join(root, "config.json"), "utf8")).toLowerCase(); }
   catch { errors.push("Vercel output config is missing."); }
   for (const name of securityNames) if (!configText.includes(name)) errors.push(`Built output lacks ${name}.`);
-  if (!configText.includes("wasm-unsafe-eval") || !configText.includes("worker-src")) {
-    errors.push("Built CSP blocks the Wasm worker.");
+  if (!configText.includes("_framework") || !configText.includes("/assets")) errors.push("Built output lacks framework or asset routes.");
+  if (configText) {
+    const assetRoute = JSON.parse(configText).routes?.find(route => route.src === "/assets/(.*)");
+    if (assetRoute?.headers?.["cache-control"] !== "no-cache") errors.push("The stable game.js URL must revalidate after deployment.");
   }
-  if (!configText.includes("immutable")) errors.push("Built assets are not immutable.");
-  if (!configText.includes("__roomaction") || !configText.includes("__roomid")) {
-    errors.push("Built output lacks the public room rewrites.");
-  }
-  for (const path of staticFiles.filter((item) => [".html", ".js", ".css"].includes(extname(item)))) {
+  for (const path of staticFiles.filter(item => [".html", ".js", ".css", ".json"].includes(extname(item)))) {
     const text = await readFile(path, "utf8");
-    for (const value of forbidden) {
-      if (text.includes(value)) errors.push(`Production bypass found in ${relative(staticRoot, path)}.`);
-    }
+    for (const value of forbidden) if (text.includes(value)) errors.push(`Production bypass found in ${relative(staticRoot, path)}.`);
   }
   return result(errors);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const target = process.argv[2];
-  const checked = target
-    ? await verifyVercelOutput(target)
-    : await verifyProjectFiles(new URL("..", import.meta.url).pathname);
-  if (!checked.valid) {
-    for (const error of checked.errors) console.error(error);
-    process.exitCode = 1;
-  } else {
-    console.log(target ? "Vercel output verification passed." : "Vercel project configuration passed.");
-  }
+  const checked = target ? await verifyVercelOutput(target) : await verifyProjectFiles(new URL("..", import.meta.url).pathname);
+  if (!checked.valid) { for (const error of checked.errors) console.error(error); process.exitCode = 1; }
+  else console.log(target ? "Vercel output verification passed." : "Vercel project configuration passed.");
 }

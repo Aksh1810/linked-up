@@ -18,6 +18,7 @@ const csp = `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ances
 await writeFile('.vercel/output/config.json', JSON.stringify({ version: 3, routes: [
   { src: '/(.*)', headers: { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' }, continue: true },
   { src: '/(?:index\\.html|appsettings\\.json|_framework/(?:blazor\\.(?:boot\\.json|webassembly\\.js)|dotnet\\.js))', headers: { 'Cache-Control': 'no-cache' }, continue: true },
+  { src: '/assets/(.*)', headers: { 'Cache-Control': 'no-cache' }, continue: true },
   { handle: 'filesystem' },
   { src: '/(?:_framework|assets)/(.*)', status: 404 },
   { src: '/.*', dest: '/index.html' }

@@ -21,11 +21,11 @@ order. Everyone sees joins and leaves live. Only the host sees Start Game, and
 it becomes available when the selected room is full. If the host leaves, the
 first remaining player becomes host without a reload.
 
-Starting changes the room to `Starting` and shows `Preparing match...` to the
-whole crew. Phase 6 intentionally stops there: match assignment, gameplay
-tickets, and navigation into the C++ simulation require Phase 7 design
-approval. The preserved direct Blue and Orange gameplay pages remain the way
-to exercise the current playable slice.
+Starting changes the room to `Starting`, verifies every SignalR presence
+subscription, assigns a short-lived gameplay ticket, and shows a countdown to
+the whole crew. The ASP.NET Core backend owns the managed BepuPhysics match;
+each Blazor client opens an authenticated gameplay WebSocket and renders the
+authoritative snapshots.
 
 ## Tether
 
@@ -56,5 +56,5 @@ reach the summit condition.
 Phase 9 supplies a low-poly blockout of all five regions. Grass starts with
 wide, forgiving jumps; Construction introduces timed platforms; Industrial
 combines conveyors, fans, and machinery; Sky uses sparse platforms and wind;
-and the stable Summit gives the whole roster a fair shared finish. C++ owns
+and the stable Summit gives the whole roster a fair shared finish. .NET owns
 the dimensions and zone of each obstacle; browser meshes only render them.

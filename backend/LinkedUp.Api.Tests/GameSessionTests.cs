@@ -1,5 +1,6 @@
 using System.Net;
 using LinkedUp.Client;
+using Microsoft.AspNetCore.SignalR.Client;
 
 namespace LinkedUp.Api.Tests;
 
@@ -9,7 +10,8 @@ public sealed class GameSessionTests
     public async Task NonJsonErrorExplainsThatTheApiUrlIsWrong()
     {
         using var http = new HttpClient(new StubHandler()) { BaseAddress = new Uri("https://linked-up.example/") };
-        var game = new GameSession(http);
+        await using var lobby = new HubConnectionBuilder().WithUrl(new Uri(http.BaseAddress!, "hubs/lobby")).Build();
+        var game = new GameSession(http, lobby);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             game.CreateAsync(2, CancellationToken.None));

@@ -1,28 +1,24 @@
 # Linked-Up
 
-Linked-Up is a 2–4 player cooperative browser climbing game. Small robots share an energy tether, so a jump, fall, or rescue affects the whole team. The host chooses one of four maps in the lobby: Classic Ascent, Relay Ridge, Crane Shift, or Windworks.
+Linked-Up is a 2–4 player cooperative browser climbing game. Small robots share an energy tether, so a jump, fall, or rescue affects the whole team. The lobby supports Classic Ascent, Relay Ridge, Crane Shift, and Windworks.
 
-The active implementation is .NET 10: a managed BepuPhysics backend owns matches, and a Blazor WebAssembly browser client runs on Vercel with Babylon.js as a rendering bridge. See [deployment](docs/deployment.md).
+The active implementation is .NET 10: ASP.NET Core owns rooms, presence, authenticated gameplay WebSockets, and managed BepuPhysics; a Blazor WebAssembly client runs on Vercel and uses Babylon.js only for rendering. See [deployment](docs/deployment.md).
 
-## Public-alpha architecture
-
-The deployable version runs as one Vercel project:
+## Production architecture
 
 ```text
-Browser ── HTTPS room + signaling requests ──> Vercel Functions ──> Redis
-Host browser ── WebRTC DataChannels ──> guest browsers
-Host Web Worker ── WebAssembly/Jolt ──> authoritative snapshots at 20 Hz
+Blazor WebAssembly + Babylon.js ── HTTPS/SignalR ──> ASP.NET Core on Render
+Browser gameplay WebSocket       ──────────────────> managed BepuPhysics
+ASP.NET Core ──────────────────────────────────────> Redis (rooms and credentials)
 ```
 
-- Vercel serves the Babylon.js client and short-lived room/signaling Functions.
-- Redis stores expiring room membership, token digests, and temporary signaling mailboxes.
-- The room host runs the authoritative 60 Hz C++/Jolt simulation compiled to WebAssembly.
-- Guests send input only to the host and render validated host snapshots.
-- The production build contains no loopback gameplay bypass.
+- Vercel serves the static Blazor client and its Babylon.js rendering bridge.
+- Render runs the .NET backend and its single authoritative 60 Hz match loop.
+- Redis stores expiring rooms, hashed player session tokens, and lobby state.
+- Gameplay snapshots are validated JSON WebSocket messages at 20 Hz; input is authenticated, ordered, bounded, and rate-limited.
+- The browser owns input, prediction/interpolation, and presentation; the server owns transforms, tether forces, obstacles, checkpoints, and completion.
 
-This keeps the alpha on Vercel's Hobby-compatible request model: no permanent game server and no long-running Vercel Function. Direct WebRTC has no TURN relay, so restrictive VPN, school, workplace, carrier, or symmetric-NAT combinations may fail to connect. The lobby tells players this before room creation.
-
-The public alpha is live at [vercel-public-alpha-three.vercel.app](https://vercel-public-alpha-three.vercel.app).
+The repository still contains the retired native prototype as a comparison fixture while the migration is verified. It is not referenced by the .NET build or deployment artifact.
 
 See the [deployment runbook](docs/deployment.md), [architecture](docs/architecture.md), [networking](docs/networking.md), and [game design](docs/game-design.md).
 
@@ -31,43 +27,27 @@ See the [deployment runbook](docs/deployment.md), [architecture](docs/architectu
 - Node.js 20.19 or newer
 - A Vercel personal Hobby account
 - Vercel CLI
-- A free Redis integration connected to the Vercel project
-- `REDIS_URL` enabled for Preview and Production
+- .NET 10 SDK and a Redis instance for the backend
+- `REDIS_URL` configured on Render, and `LinkedUp__ClientOrigin` set to the Vercel origin
+- `LINKEDUP_API_URL` configured on Vercel with the public Render HTTPS origin
 
 Install and verify locally:
 
 ```sh
 npm ci
-npm --prefix client ci
 npm test
-npm --prefix client run typecheck
-npm run build
-node scripts/verify-vercel-build.mjs
+env LINKEDUP_API_URL=https://linked-up-dotnet.onrender.com npm run build
 ```
 
-Build the Vercel artifact with `vercel build --yes`, then verify it with:
+The .NET backend requires Redis locally. The browser development server reads `browser/wwwroot/appsettings.Development.json`; production builds require `LINKEDUP_API_URL`.
 
-```sh
-node scripts/verify-vercel-build.mjs .vercel/output
-```
+## Local development
 
-`.env.example` names the only required runtime secret. Never commit the Redis value.
-
-## Local browser development
-
-Run the Vite client with `npm --prefix client run dev`. Production room APIs require Redis and are best exercised with Vercel's local emulator after linking the project and pulling Development environment variables.
-
-The repository retains the older native stack for simulation development. In a Vite development build only, `?player=blue` and `?player=orange` can connect to the loopback C++ server at `127.0.0.1:9002`. Vite removes this branch and its URLs from production output.
-
-To rebuild the browser simulation, install Emscripten and run `scripts/build-wasm.sh`. It pins Jolt Physics `v5.6.0`, generates the committed JavaScript/Wasm artifacts, builds a native parity fixture from the same source, and records source hashes.
+Run Redis, the backend on port 5100, and the Blazor dev server on port 5173. Open two fresh browser tabs, create a two-player room, join using the invite code, and start the match. The integration suite performs the same lifecycle with real SignalR presence and gameplay WebSockets.
 
 ## Verification
 
-- API/shared tests: `npm run test:api`
-- Client tests: `npm --prefix client test`
-- Type check: `npm --prefix client run typecheck`
-- Wasm/native parity: `node simulation/wasm/wasm_bridge_test.mjs`
-- Vercel config/artifact: `node --test scripts/verify-vercel-build.test.mjs`
-- Deployed room lifecycle: `node scripts/deployed-smoke.mjs https://your-deployment.example`
-
-The Redis concurrency test runs when `TEST_REDIS_URL` is set; otherwise it is reported as skipped.
+- `npm test` — browser bridge, API, client, and managed simulation tests.
+- `npm run build` — Release Blazor publish copied into `.vercel/output/static` (requires `LINKEDUP_API_URL`).
+- `env LINKEDUP_API_URL=https://linked-up-dotnet.onrender.com npm run build` — production artifact.
+- `git diff --check` — patch hygiene.
