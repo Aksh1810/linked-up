@@ -29,7 +29,7 @@ See the [deployment runbook](docs/deployment.md), [architecture](docs/architectu
 - Vercel CLI
 - .NET 10 SDK and a Redis instance for the backend
 - `REDIS_URL` configured on Render, and `LinkedUp__ClientOrigin` set to the Vercel origin
-- `LINKEDUP_API_URL` configured on Vercel with the public Render HTTPS origin
+- Optional `LINKEDUP_API_URL` on Vercel to override the default public backend, `https://linked-up-dotnet.onrender.com`
 
 Install and verify locally:
 
@@ -39,7 +39,7 @@ npm test
 env LINKEDUP_API_URL=https://linked-up-dotnet.onrender.com npm run build
 ```
 
-The .NET backend requires Redis locally. The browser development server reads `browser/wwwroot/appsettings.Development.json`; production builds require `LINKEDUP_API_URL`.
+The .NET backend requires Redis locally. The browser development server reads `browser/wwwroot/appsettings.Development.json`; production builds use the public Render backend by default. Set `LINKEDUP_API_URL` when deploying against another backend.
 
 ## Local development
 
@@ -48,6 +48,6 @@ Run Redis, the backend on port 5100, and the Blazor dev server on port 5173. Ope
 ## Verification
 
 - `npm test` — browser bridge, API, client, and managed simulation tests.
-- `npm run build` — Release Blazor publish copied into `.vercel/output/static` (requires `LINKEDUP_API_URL`).
+- `npm run build` — Release Blazor publish copied into `.vercel/output/static`, using the public backend by default.
 - `env LINKEDUP_API_URL=https://linked-up-dotnet.onrender.com npm run build` — production artifact.
 - `git diff --check` — patch hygiene.

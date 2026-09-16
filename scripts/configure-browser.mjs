@@ -1,8 +1,9 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-const raw = process.env.LINKEDUP_API_URL;
-if (!raw) throw new Error('Set LINKEDUP_API_URL to the public HTTPS .NET backend URL.');
+// This is a public service origin, not a secret. Git deployments use the
+// existing backend unless a different deployment explicitly overrides it.
+const raw = process.env.LINKEDUP_API_URL?.trim() || 'https://linked-up-dotnet.onrender.com';
 const api = new URL(raw);
 const local = ['localhost', '127.0.0.1', '[::1]'].includes(api.hostname);
 if ((api.protocol !== 'https:' && !(local && api.protocol === 'http:')) || api.username || api.password || api.search || api.hash || api.pathname !== '/') {

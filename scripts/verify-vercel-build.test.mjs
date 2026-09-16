@@ -3,8 +3,25 @@ import test from "node:test";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { verifyProjectFiles, verifyVercelOutput } from "./verify-vercel-build.mjs";
+
+test("Git builds without an API environment variable use the public backend and preserve overrides", async () => {
+  const root = await mkdtemp(join(tmpdir(), "linked-up-browser-config-"));
+  const script = fileURLToPath(new URL("./configure-browser.mjs", import.meta.url));
+  const env = { ...process.env };
+  delete env.LINKEDUP_API_URL;
+  for (const [value, expected] of [[undefined, "https://linked-up-dotnet.onrender.com/"], ["https://alternate.example", "https://alternate.example/"]]) {
+    execFileSync(process.execPath, [script, "appsettings.json"], { cwd: root, env: { ...env, ...(value ? { LINKEDUP_API_URL: value } : {}) } });
+    assert.deepEqual(JSON.parse(await readFile(join(root, "appsettings.json"), "utf8")), { ApiBaseUrl: expected });
+    const config = await readFile(join(root, ".vercel/output/config.json"), "utf8");
+    assert.ok(config.includes(expected.slice(0, -1)));
+    assert.ok(config.includes(expected.replace(/^https/, "wss").slice(0, -1)));
+  }
+  assert.throws(() => execFileSync(process.execPath, [script, "appsettings.json"], { cwd: root, env: { ...env, LINKEDUP_API_URL: "http://unsafe.example" }, stdio: "pipe" }));
+});
 
 test("project config builds the static Blazor site with safe headers", async () => {
   const root = new URL("..", import.meta.url).pathname;
