@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "dotnet test LinkedUp.slnx -m:1 /p:UseSharedCompilation=false",
+    "test": "node --test browser/game.test.mjs scripts/verify-vercel-build.test.mjs scripts/deployed-smoke.test.mjs && dotnet test LinkedUp.slnx -m:1 /p:UseSharedCompilation=false",
     "build": "bash scripts/build-blazor.sh"
   },
   "dependencies": {

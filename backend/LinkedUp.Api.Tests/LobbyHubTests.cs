@@ -1,6 +1,9 @@
 using System.Net.Http.Json;
+using System.Net.WebSockets;
+using System.Text.Json;
 using System.Threading.Channels;
 using LinkedUp.Api.Rooms;
+using LinkedUp.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -42,6 +45,130 @@ public sealed class LobbyHubTests : IAsyncLifetime
 
         _client.Dispose();
         await _factory.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Two_browser_sessions_can_start_and_both_receive_gameplay()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var token = timeout.Token;
+        await using var hostHub = BuildHubConnection();
+        await using var guestHub = BuildHubConnection();
+        using var host = new GameSession(_client, hostHub);
+        using var guest = new GameSession(_client, guestHub);
+        var hostUpdates = Channel.CreateUnbounded<PublicRoom>();
+        var guestUpdates = Channel.CreateUnbounded<PublicRoom>();
+        var guestClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.RoomChanged += () => { if (host.Room is { } room) hostUpdates.Writer.TryWrite(room); };
+        guest.RoomChanged += () => { if (guest.Room is { } room) guestUpdates.Writer.TryWrite(room); else guestClosed.TrySetResult(); };
+        await host.CreateAsync(2, token);
+        await guest.JoinAsync(host.Room!.Code, token);
+        await WaitForRoomAsync(hostUpdates, room => room.Players.Count == 2, token);
+        Assert.Equal(2, host.Room.Players.Count);
+
+        // Closing and reopening a tab must remove the old presence and register the new player.
+        await guestHub.StopAsync(token);
+        await WaitForRoomAsync(hostUpdates, room => room.Players.Count == 1, token);
+        await guestClosed.Task.WaitAsync(token);
+        Assert.Null(guest.Session);
+        await guest.JoinAsync(host.Room.Code, token);
+        await WaitForRoomAsync(hostUpdates, room => room.Players.Count == 2, token);
+
+        await host.StartAsync(token);
+        await WaitForRoomAsync(guestUpdates, room => room.Status == "inGame", token);
+        Assert.Equal("inGame", host.Room.Status);
+        Assert.Equal(host.Room.MatchId, guest.Room!.MatchId);
+
+        await using var hostGameplay = new GameplayClient(await _factory.Server.CreateWebSocketClient()
+            .ConnectAsync(new Uri("ws://localhost/gameplay"), token));
+        await using var guestGameplay = new GameplayClient(await _factory.Server.CreateWebSocketClient()
+            .ConnectAsync(new Uri("ws://localhost/gameplay"), token));
+        var received = new List<Task<ServerSnapshot>>();
+        foreach (var (game, gameplay) in new[] { (host, hostGameplay), (guest, guestGameplay) })
+        {
+            var snapshot = new TaskCompletionSource<ServerSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            gameplay.SnapshotChanged += value => snapshot.TrySetResult(value);
+            received.Add(snapshot.Task.WaitAsync(token));
+            var launch = await game.LaunchAsync(token);
+            await gameplay.JoinAsync(launch, token);
+            Assert.Equal(launch.Color, gameplay.Welcome!.Player);
+        }
+        foreach (var pending in received)
+        {
+            var snapshot = await pending;
+            Assert.Equal(2, snapshot.Players.Length);
+            Assert.True(snapshot.Tick > 0);
+        }
+        var initial = hostGameplay.Snapshot!;
+        hostGameplay.Input.Key("KeyW", true);
+        guestGameplay.Input.Key("KeyW", true);
+        var now = 0d;
+        while (hostGameplay.Snapshot!.Players.Any(player =>
+            player.Position.Z <= initial.Players.Single(start => start.Id == player.Id).Position.Z + .25f))
+        {
+            await hostGameplay.FrameAsync(now, -Math.PI / 2);
+            await guestGameplay.FrameAsync(now, -Math.PI / 2);
+            now += 20;
+            await Task.Delay(20, token);
+        }
+        Assert.All(hostGameplay.Snapshot.Players, player => Assert.True(player.AcknowledgedInput > 0));
+        await hostGameplay.DisposeAsync();
+        await guestGameplay.DisposeAsync();
+        await host.LeaveAsync(token);
+        Assert.Null(host.Session);
+        await host.CreateAsync(2, token);
+        Assert.Equal("waiting", host.Room!.Status);
+        Assert.Single(host.Room.Players);
+    }
+
+    private static async Task WaitForRoomAsync(Channel<PublicRoom> updates, Func<PublicRoom, bool> matches, CancellationToken token)
+    {
+        while (!matches(await updates.Reader.ReadAsync(token))) { }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Delayed_room_reads_cannot_undo_start_or_replace_a_new_session(bool changeRoom)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var token = timeout.Token;
+        using var delayed = new DelayedRoomRead(_factory.Server.CreateHandler());
+        using var http = new HttpClient(delayed) { BaseAddress = _client.BaseAddress };
+        await using var hostHub = BuildHubConnection();
+        await using var guestHub = BuildHubConnection();
+        using var host = new GameSession(http, hostHub);
+        using var guest = new GameSession(_client, guestHub);
+        await host.CreateAsync(2, token);
+        var refresh = host.RefreshAsync(token);
+        await delayed.Captured.Task.WaitAsync(token);
+        await guest.JoinAsync(host.Room!.Code, token);
+        await host.StartAsync(token);
+        if (changeRoom) { await host.LeaveAsync(token); await host.CreateAsync(2, token); }
+        var expected = host.Session;
+        delayed.Release.SetResult();
+        await refresh;
+        Assert.Equal(expected!.Room.Id, host.Room!.Id);
+        Assert.Equal(expected.Room.Version, host.Room.Version);
+        Assert.Equal(expected.Room.Status, host.Room.Status);
+    }
+
+    private sealed class DelayedRoomRead(HttpMessageHandler inner) : DelegatingHandler(inner)
+    {
+        public TaskCompletionSource Captured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            var response = await base.SendAsync(request, token);
+            if (request.Method == HttpMethod.Get)
+            {
+                // Capture the old body before a later live update or session change arrives.
+                await response.Content.LoadIntoBufferAsync(token);
+                Captured.TrySetResult();
+                await Release.Task.WaitAsync(token);
+            }
+            return response;
+        }
     }
 
     [Fact]

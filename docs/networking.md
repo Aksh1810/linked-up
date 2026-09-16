@@ -2,7 +2,7 @@
 
 ## Production endpoints
 
-The single Vercel origin serves the SPA and these stateless Function routes:
+The ASP.NET Core service exposes:
 
 ```text
 POST /api/rooms
@@ -11,41 +11,31 @@ POST /api/rooms/{code}/join
 POST /api/rooms/{code}/leave
 POST /api/rooms/{code}/map
 POST /api/rooms/{code}/start
-POST /api/rooms/{code}/presence
-GET  /api/rooms/{code}/signals?after={cursor}&limit={count}
-POST /api/rooms/{code}/signals
+POST /api/rooms/{code}/launch
+WS   /hubs/lobby
+WS   /gameplay
 ```
 
-Mutation and signaling requests authenticate with `X-Player-Token`. Responses are `no-store`, exact-schema JSON with browser security headers. Request bodies are capped at 64 KiB, signaling envelopes at 16 KiB, ICE candidates at 4 KiB, and abusive scopes receive a stable `429` plus `Retry-After`.
+Room mutations authenticate with `X-Player-Token`. Responses are `no-store` JSON. HTTP request bodies are capped at 4 KiB, incoming gameplay messages at the server are capped at 2 KiB, and the client bounds received snapshots at 256 KiB. Abusive IP scopes receive `429`.
 
-Rooms and signal mailboxes expire in Redis. Conditional room reads use ETags; normal visible-tab polling is once per second, hidden-tab polling is once per ten seconds, and failures back off to ten seconds.
+Rooms expire in Redis. SignalR delivers room updates immediately; a refresh fallback runs every 1.5 seconds while in the lobby. Closing the lobby connection removes waiting-player presence and clears that client's room view.
 
-## Direct gameplay
+## Gameplay
 
-Each guest negotiates one `RTCPeerConnection` with the room host using `stun:stun.cloudflare.com:3478`. No Vercel Function stays open for gameplay and no snapshot is stored in Redis.
+Each player opens one authenticated WebSocket to `/gameplay` using the short-lived ticket returned by `/api/rooms/{code}/launch`. The server sends a `welcome`, countdown messages, and authoritative snapshots at 20 Hz. The client sends bounded `input` messages at 60 Hz.
 
-DataChannel traffic is split by purpose:
-
-| Channel | Delivery | Content |
-| --- | --- | --- |
-| `control` | ordered, reliable | protocol handshake, ready, finished, failure |
-| `input` | unordered, no retransmits | sequence, client tick, movement axes, jump |
-| `snapshot` | unordered, no retransmits | authoritative 20 Hz world state |
-
-All frames are binary-prefixed UTF-8 JSON with strict size and schema validation. Input sequences must increase. Snapshot player order must exactly match the room roster. A guest cannot send a snapshot, select a different identity, or authoritatively change position.
+All frames are UTF-8 JSON with strict size and schema validation. Input sequences must increase. Snapshot player order must exactly match the room roster. A client cannot send a snapshot, select a different identity, or authoritatively change position.
 
 ## Connection lifecycle
 
-1. Every player observes the same starting room and protocol-1 match ID.
-2. Each browser polls only its own authenticated signal mailbox.
-3. The host offers three channels; guests answer and exchange ICE candidates.
-4. The host waits until all guest channels are open, then sends the ordered handshake and ready message.
-5. All players show `3`, `2`, `1`, `CLIMB!`.
-6. The host starts the Wasm simulation; guests send input and receive snapshots.
-7. A guest disconnect produces neutral input. A host disconnect ends the guest match.
+1. Every player observes the same room and protocol-2 match ID.
+2. SignalR subscriptions register every player with `RoomPresence`.
+3. The host starts only after all roster members are connected.
+4. Each browser redeems its own gameplay ticket on a WebSocket.
+5. The server sends `3`, `2`, `1`, `CLIMB!`, then 20 Hz snapshots.
+6. Each browser sends only its own input; the server runs the managed simulation.
+7. A disconnected player contributes neutral input; an empty match expires.
 
-The peer mesh allows one ICE restart after a 15-second negotiation timeout. If direct ICE still fails, the UI explains that a VPN/firewall or restrictive network may be blocking it. There is intentionally no TURN credential or paid relay dependency in this alpha.
+## Local development
 
-## Local native mode
-
-The repository retains the loopback C++ gameplay server and ASP.NET development stack. Vite development can use the Blue/Orange query bypass against `ws://127.0.0.1:9002`; the production build statically removes that code and its URLs. Native mode is for local engine work and is not a deployment requirement.
+Run Redis, the ASP.NET Core service, and the Blazor development server. The same SignalR and WebSocket paths are used locally and in production; no loopback C++ or query-parameter bypass is part of the active client.

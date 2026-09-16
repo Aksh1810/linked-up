@@ -3,40 +3,48 @@ import test from "node:test";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { verifyProjectFiles, verifyVercelOutput } from "./verify-vercel-build.mjs";
 
-test("project config builds the SPA and preserves functions with safe headers", async () => {
+test("Git builds without an API environment variable use the public backend and preserve overrides", async () => {
+  const root = await mkdtemp(join(tmpdir(), "linked-up-browser-config-"));
+  const script = fileURLToPath(new URL("./configure-browser.mjs", import.meta.url));
+  const env = { ...process.env };
+  delete env.LINKEDUP_API_URL;
+  for (const [value, expected] of [[undefined, "https://linked-up-dotnet.onrender.com/"], ["https://alternate.example", "https://alternate.example/"]]) {
+    execFileSync(process.execPath, [script, "appsettings.json"], { cwd: root, env: { ...env, ...(value ? { LINKEDUP_API_URL: value } : {}) } });
+    assert.deepEqual(JSON.parse(await readFile(join(root, "appsettings.json"), "utf8")), { ApiBaseUrl: expected });
+    const config = await readFile(join(root, ".vercel/output/config.json"), "utf8");
+    assert.ok(config.includes(expected.slice(0, -1)));
+    assert.ok(config.includes(expected.replace(/^https/, "wss").slice(0, -1)));
+  }
+  assert.throws(() => execFileSync(process.execPath, [script, "appsettings.json"], { cwd: root, env: { ...env, LINKEDUP_API_URL: "http://unsafe.example" }, stdio: "pipe" }));
+});
+
+test("project config builds the static Blazor site with safe headers", async () => {
   const root = new URL("..", import.meta.url).pathname;
   const result = await verifyProjectFiles(root);
   assert.deepEqual(result, { valid: true, errors: [] });
 
-  const tsconfig = JSON.parse(await readFile(join(root, "tsconfig.json"), "utf8"));
-  assert.equal(tsconfig.compilerOptions.allowImportingTsExtensions, true);
-  assert.equal(tsconfig.compilerOptions.target, "ES2022");
-
-  const ignored = await readFile(join(root, ".vercelignore"), "utf8");
-  assert.match(ignored, /\*\*\/\*\.test\.ts/);
-  assert.match(ignored, /build\*\/\*\*/);
+  const env = await readFile(join(root, ".env.example"), "utf8");
+  assert.match(env, /^LINKEDUP_API_URL=$/m);
 });
 
-test("output verifier checks SPA routes, functions, Wasm, headers, and bypass absence", async () => {
+test("output verifier checks Blazor assets, headers, backend config, and bypass absence", async () => {
   const root = await mkdtemp(join(tmpdir(), "linked-up-vercel-output-"));
   await mkdir(join(root, "static", "assets"), { recursive: true });
-  await mkdir(join(root, "functions", "api", "rooms", "index.func"), { recursive: true });
-  await mkdir(join(root, "functions", "api", "room.func"), { recursive: true });
+  await mkdir(join(root, "static", "_framework"), { recursive: true });
   await writeFile(join(root, "static", "index.html"), "<main>Linked-Up</main>");
-  await writeFile(join(root, "static", "assets", "simulation.wasm"), new Uint8Array([0, 97, 115, 109]));
-  await writeFile(join(root, "functions", "api", "rooms", "index.func", ".vc-config.json"), "{}");
-  await writeFile(join(root, "functions", "api", "room.func", ".vc-config.json"), "{}");
-  await writeFile(join(root, "functions", "api", "rooms", "index.func", "index.js"), "import './room.js';");
+  await writeFile(join(root, "static", "assets", "game.js"), "export function start() {}");
+  await writeFile(join(root, "static", "_framework", "blazor.webassembly.js"), "");
+  await writeFile(join(root, "static", "appsettings.json"), JSON.stringify({ ApiBaseUrl: "https://backend.example/" }));
   await writeFile(join(root, "config.json"), JSON.stringify({
     version: 3,
     routes: [
-      { src: "/assets/(.*)", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
-      { src: "/api/(.*)", dest: "/api/$1" },
-      { src: "/api/rooms/([^/]+)/([^/]+)", dest: "/api/room?__roomId=$1&__roomAction=$2" },
-      { src: "/api/rooms/([^/]+)", dest: "/api/room?__roomId=$1" },
+      { src: "/_framework/(.*)", headers: { "cache-control": "no-cache" }, continue: true },
+      { src: "/assets/(.*)", headers: { "cache-control": "no-cache" }, continue: true },
       { src: "/(.*)", headers: {
         "content-security-policy": "default-src 'self'; worker-src 'self'; script-src 'self' 'wasm-unsafe-eval'",
         "x-content-type-options": "nosniff", "x-frame-options": "DENY",
@@ -46,9 +54,14 @@ test("output verifier checks SPA routes, functions, Wasm, headers, and bypass ab
     ],
   }));
   assert.deepEqual(await verifyVercelOutput(root), { valid: true, errors: [] });
-  await writeFile(join(root, "functions", "api", "rooms", "index.func", "index.js"), "import './room.ts';");
+  const configPath = join(root, "config.json");
+  const config = await readFile(configPath, "utf8");
+  await writeFile(configPath, config.replaceAll("no-cache", "public, max-age=31536000, immutable"));
   assert.equal((await verifyVercelOutput(root)).valid, false);
-  await writeFile(join(root, "functions", "api", "rooms", "index.func", "index.js"), "import './room.js';");
+  await writeFile(configPath, config);
+  await writeFile(join(root, "static", "appsettings.json"), JSON.stringify({ ApiBaseUrl: "http://127.0.0.1:5100/" }));
+  assert.equal((await verifyVercelOutput(root)).valid, false);
+  await writeFile(join(root, "static", "appsettings.json"), JSON.stringify({ ApiBaseUrl: "https://backend.example/" }));
   await writeFile(join(root, "static", "index.html"), "ws://127.0.0.1:9002");
   assert.equal((await verifyVercelOutput(root)).valid, false);
 });

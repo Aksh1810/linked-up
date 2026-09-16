@@ -24,4 +24,5 @@ docs/
 /browser/obj/
 /browser/node_modules/
 /browser/wwwroot/assets/
+/browser/wwwroot/appsettings.json
 /artifacts/
